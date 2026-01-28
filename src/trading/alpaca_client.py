@@ -330,7 +330,7 @@ class AlpacaClient:
         new_stop: float,
         new_tp: float,
     ) -> bool:
-        """Cancel existing SL/TP orders and submit new ones."""
+        """Cancel existing SL/TP orders and submit new OCO pair."""
         try:
             new_stop = self._round_price(new_stop)
             new_tp = self._round_price(new_tp)
@@ -339,31 +339,22 @@ class AlpacaClient:
             if cancelled > 0:
                 self._wait_for_cancels(symbol)
 
-            # Submit new stop loss order
+            # Submit OCO order: stop loss + take profit share the position
             sell_side = "sell" if side.lower() == "buy" else "buy"
-            from alpaca.trading.requests import StopOrderRequest
-            from alpaca.trading.enums import OrderSide as OS, TimeInForce as TIF
+            from alpaca.trading.enums import OrderSide as OS, TimeInForce as TIF, OrderClass
 
             order_side = OS.SELL if sell_side == "sell" else OS.BUY
 
-            stop_req = StopOrderRequest(
+            oco_req = LimitOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=order_side,
                 time_in_force=TIF.GTC,
-                stop_price=new_stop,
-            )
-            self.client.submit_order(stop_req)
-
-            # Submit new take profit (limit) order
-            limit_req = LimitOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=order_side,
-                time_in_force=TIF.GTC,
+                order_class=OrderClass.OCO,
                 limit_price=new_tp,
+                stop_loss=StopLossRequest(stop_price=new_stop),
             )
-            self.client.submit_order(limit_req)
+            self.client.submit_order(oco_req)
 
             logger.info(f"Replaced bracket orders for {symbol}: SL={new_stop} TP={new_tp}")
             return True
