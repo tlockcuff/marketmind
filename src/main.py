@@ -51,10 +51,14 @@ def acquire_lock() -> bool:
     if LOCK_FILE.exists():
         try:
             pid = int(LOCK_FILE.read_text().strip())
-            # Check if process is still running
-            os.kill(pid, 0)
-            logger.error(f"Another bot instance running (PID {pid})")
-            return False
+            if pid == os.getpid():
+                # Our own stale lock from a restart (common in Docker where PID=1)
+                LOCK_FILE.unlink(missing_ok=True)
+            else:
+                # Check if process is still running
+                os.kill(pid, 0)
+                logger.error(f"Another bot instance running (PID {pid})")
+                return False
         except (ProcessLookupError, ValueError):
             # Stale lock file, remove it
             LOCK_FILE.unlink(missing_ok=True)
