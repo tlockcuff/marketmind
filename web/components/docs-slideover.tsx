@@ -15,7 +15,7 @@ export function DocsSlideover() {
   const components: Components = {
     img({ src, alt }) {
       // Rewrite relative paths to serve from /public
-      const resolvedSrc = src?.startsWith("docs/") ? `/${src}` : src;
+      const resolvedSrc = typeof src === "string" && src.startsWith("docs/") ? `/${src}` : src as string;
       return <img src={resolvedSrc} alt={alt ?? ""} className="rounded max-w-full" />;
     },
     a({ href, children }) {
