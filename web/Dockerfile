@@ -29,4 +29,5 @@ EXPOSE 5000
 ENV PORT=5000
 ENV HOSTNAME="0.0.0.0"
 
-CMD ["node", "server.js"]
+# standalone nests server under web/ due to turbopack.root
+CMD ["node", "web/server.js"]
