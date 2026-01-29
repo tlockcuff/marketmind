@@ -83,13 +83,13 @@ class PositionManager:
         # Base position size
         max_position_value = equity * settings.MAX_POSITION_PCT
 
-        # Adjust based on score
-        if score >= 85:
-            multiplier = 1.0
-        elif score >= 75:
-            multiplier = 0.8
+        # Adjust based on score — aggressive sizing
+        if score >= 80:
+            multiplier = 1.0  # full size for top signals
         elif score >= 65:
-            multiplier = 0.5
+            multiplier = 0.8
+        elif score >= 50:
+            multiplier = 0.6
         else:
             return 0
 
@@ -105,6 +105,14 @@ class PositionManager:
             # else: full size (stable)
 
         position_value = max_position_value * multiplier
+
+        # Cap to available buying power (leave 10% buffer)
+        buying_power = account.get("buying_power", 0)
+        bp_cap = buying_power * 0.90
+        if position_value > bp_cap:
+            logger.info(f"BP cap: ${position_value:,.0f} -> ${bp_cap:,.0f} (BP=${buying_power:,.0f})")
+            position_value = bp_cap
+
         shares = int(position_value / price)
 
         return max(1, shares) if shares > 0 else 0
@@ -254,37 +262,35 @@ class PositionManager:
                     logger.info(f"{symbol} stale ({held_hours:.0f}h), tightening stop to breakeven+0.5%: {breakeven_stop:.2f}")
                     self.update_stop_loss(symbol, breakeven_stop)
 
-            # Scale-out logic (only for buy direction, before full exit checks)
-            if not should_close and pos.direction in ("buy", "long") and pos.qty > 1:
-                gain_pct = (price - pos.entry_price) / pos.entry_price
+            # Scale-out logic (before full exit checks)
+            if not should_close and pos.qty > 1:
+                if pos.direction in ("buy", "long"):
+                    gain_pct = (price - pos.entry_price) / pos.entry_price
+                else:
+                    gain_pct = (pos.entry_price - price) / pos.entry_price
                 orig_qty = pos.original_qty or pos.qty
 
-                # Level 1: +5% → sell 33%, move stop to breakeven
-                if pos.scale_out_level == 0 and gain_pct >= 0.05:
-                    sell_qty = max(1, int(orig_qty * 0.33))
+                # Level 1: +3% → sell 25%, move stop to breakeven
+                if pos.scale_out_level == 0 and gain_pct >= 0.03:
+                    sell_qty = max(1, int(orig_qty * 0.25))
                     if sell_qty < pos.qty:
-                        if self._partial_close(symbol, sell_qty, "scale_out_5pct"):
+                        if self._partial_close(symbol, sell_qty, "scale_out_3pct"):
                             pos.scale_out_level = 1
-                            # Move stop to breakeven
                             self.update_stop_loss(symbol, pos.entry_price)
                             logger.info(f"{symbol} scale-out L1: sold {sell_qty}, stop→breakeven")
 
-                # Level 2: +8% → sell 50% of remainder, widen trail
-                elif pos.scale_out_level == 1 and gain_pct >= 0.08:
-                    sell_qty = max(1, int(pos.qty * 0.50))
+                # Level 2: +6% → sell another 25% of original, tighten trail
+                elif pos.scale_out_level == 1 and gain_pct >= 0.06:
+                    sell_qty = max(1, int(orig_qty * 0.25))
                     if sell_qty < pos.qty:
-                        if self._partial_close(symbol, sell_qty, "scale_out_8pct"):
+                        if self._partial_close(symbol, sell_qty, "scale_out_6pct"):
                             pos.scale_out_level = 2
-                            # Widen trailing stop to lock in some profit
-                            lock_stop = pos.entry_price * 1.03
-                            if lock_stop > pos.stop_loss:
-                                self.update_stop_loss(symbol, lock_stop)
+                            lock_stop = pos.entry_price * (1.03 if pos.direction in ("buy", "long") else 0.97)
+                            self.update_stop_loss(symbol, lock_stop)
                             logger.info(f"{symbol} scale-out L2: sold {sell_qty}, stop→+3%")
 
-                # Level 3: +12% → close remainder
-                elif pos.scale_out_level >= 1 and gain_pct >= 0.12:
-                    should_close = True
-                    reason = "take_profit_12pct"
+                # Level 3: remainder rides trailing stop — no forced close
+                # (trailing stop in _check_positions handles final exit)
 
             # Price-based exits
             if not should_close:

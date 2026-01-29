@@ -80,21 +80,19 @@ Compares how much you could gain versus how much you could lose:
 
 | Final Score | Action | What It Means |
 |-------------|--------|---------------|
-| 80+ | 🟢 Strong Buy | Everything lines up — full position |
-| 65-79 | 🟡 Buy | Good setup — reduced position |
-| 40-64 | 🟠 Hold | Not convincing enough to trade |
-| 20-39 | 🔴 Weak | Most signals disagree |
-| Below 20 | ⛔ Avoid | Stay away |
+| 80+ | 🟢 Strong Buy | Everything lines up — full position (1.2x oversize) |
+| 65-79 | 🟡 Buy | Good setup — 80% position |
+| 50-64 | 🟠 Buy | Meets threshold — 60% position |
+| Below 50 | 🔴 Skip | Not convincing enough to trade |
 
 ### 🌦️ Market Regime Adjustments
 
-The threshold to execute a trade shifts based on market conditions:
+Volatility = opportunity. The threshold DROPS in active markets:
 
-- 🟢 **Normal market**: Score must be >= 65
-- 📉 **Trending down** (for buy signals): Raised to >= 70
-- 🔴 **High volatility** (VIX > 30): Raised to >= 75
-
-This makes the bot more cautious during turbulent markets.
+- 🟢 **Trending up**: Lowered to 45 — ride the wave
+- 📉 **Trending down**: Lowered to 45 — shorts thrive
+- 🔴 **High volatility** (VIX > 30): Lowered to 45 — more setups in chaos
+- 🟡 **Choppy**: Standard threshold of 50
 
 ---
 
@@ -104,7 +102,7 @@ Even when a trade passes the threshold, higher scores get bigger positions:
 
 | Score | Position Size |
 |-------|--------------|
-| 85+ | 💪 100% of max allocation |
-| 75-84 | 👍 80% |
-| 65-74 | 👌 50% |
-| Below 65 | 🚫 No trade |
+| 80+ | 💪 100% of max allocation (1.2x oversize in execution) |
+| 65-79 | 👍 80% |
+| 50-64 | 👌 60% |
+| Below 50 | 🚫 No trade |

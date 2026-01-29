@@ -148,6 +148,7 @@ class AlpacaClient:
                     "market_value": float(p.market_value),
                     "unrealized_pl": float(p.unrealized_pl),
                     "unrealized_plpc": float(p.unrealized_plpc),
+                    "asset_class": getattr(p, "asset_class", "us_equity"),
                 }
                 for p in positions
             ]
@@ -352,6 +353,7 @@ class AlpacaClient:
                 time_in_force=TIF.GTC,
                 order_class=OrderClass.OCO,
                 limit_price=new_tp,
+                take_profit=TakeProfitRequest(limit_price=new_tp),
                 stop_loss=StopLossRequest(stop_price=new_stop),
             )
             self.client.submit_order(oco_req)

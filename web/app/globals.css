@@ -1,0 +1,212 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-background: #0a0a0f;
+  --color-foreground: #e8e8ed;
+  --color-card: #12121a;
+  --color-card-foreground: #e8e8ed;
+  --color-popover: #1a1a24;
+  --color-popover-foreground: #e8e8ed;
+  --color-primary: #b0b0bb;
+  --color-primary-foreground: #ffffff;
+  --color-secondary: #1a1a24;
+  --color-secondary-foreground: #e8e8ed;
+  --color-muted: #1a1a24;
+  --color-muted-foreground: #8a8a9a;
+  --color-accent: #1a1a24;
+  --color-accent-foreground: #e8e8ed;
+  --color-destructive: #ef4444;
+  --color-destructive-foreground: #ffffff;
+  --color-border: #252530;
+  --color-input: #1e1e28;
+  --color-ring: #b0b0bb;
+  --color-chart-1: #b0b0bb;
+  --color-chart-2: #10b981;
+  --color-chart-3: #f59e0b;
+  --color-chart-4: #71717a;
+  --color-chart-5: #ef4444;
+  --color-sidebar-background: #0a0a0f;
+  --color-sidebar-foreground: #e8e8ed;
+  --color-sidebar-primary: #b0b0bb;
+  --color-sidebar-primary-foreground: #ffffff;
+  --color-sidebar-accent: #1a1a24;
+  --color-sidebar-accent-foreground: #e8e8ed;
+  --color-sidebar-border: #2a2a36;
+  --color-sidebar-ring: #b0b0bb;
+  --radius: 0.25rem;
+  --font-sans: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+}
+
+body {
+  background: var(--color-background);
+  color: var(--color-foreground);
+  font-family: var(--font-sans);
+  font-size: 14px;
+}
+
+/* Panel header bar — subtle tinted stripe, also acts as drag handle */
+.panel-header {
+  background: #16161f;
+  border-bottom: 1px solid #2a2a36;
+  padding: 6px 12px;
+  display: flex;
+  align-items: center;
+  cursor: grab;
+  user-select: none;
+}
+.panel-header:active {
+  cursor: grabbing;
+}
+
+.panel-title {
+  font-size: 12px;
+  font-weight: 700;
+  color: #ff9e2c;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #27272a;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3f3f46;
+}
+
+/* Grid layout */
+.grid-item {
+  overflow: hidden;
+}
+.grid-item > * {
+  height: 100%;
+}
+.react-grid-placeholder {
+  background: #a1a1aa !important;
+  opacity: 0.15 !important;
+  border-radius: 0.25rem;
+}
+.react-grid-item > .react-resizable-handle {
+  background: none;
+}
+.react-grid-item > .react-resizable-handle::after {
+  border-right-color: #111111;
+  border-bottom-color: #111111;
+}
+
+/* Bloomberg green/red for P/L */
+.pl-positive { color: #33d17a; }
+.pl-negative { color: #ff5555; }
+
+/* Dark prose for markdown docs */
+.prose-dark {
+  color: #c8c8d0;
+  line-height: 1.7;
+  font-size: 13px;
+}
+.prose-dark h1 {
+  color: #e8e8ed;
+  font-size: 1.4em;
+  font-weight: 700;
+  margin: 0 0 0.8em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid #252530;
+}
+.prose-dark h2 {
+  color: #e8e8ed;
+  font-size: 1.15em;
+  font-weight: 600;
+  margin: 1.4em 0 0.5em;
+}
+.prose-dark h3 {
+  color: #d0d0da;
+  font-size: 1em;
+  font-weight: 600;
+  margin: 1.2em 0 0.4em;
+}
+.prose-dark p {
+  margin: 0.6em 0;
+}
+.prose-dark ul,
+.prose-dark ol {
+  margin: 0.5em 0 0 0;
+  padding: 0 0 0 2em;
+  list-style: revert;
+}
+.prose-dark li {
+  margin: 0.25em 0;
+  color: #c8c8d0;
+}
+.prose-dark li::marker {
+  color: #8a8a9a;
+}
+.prose-dark code {
+  background: #1a1a24;
+  color: #ff9e2c;
+  padding: 0.15em 0.35em;
+  border-radius: 3px;
+  font-size: 0.9em;
+}
+.prose-dark pre {
+  background: #12121a;
+  border: 1px solid #252530;
+  border-radius: 4px;
+  padding: 0.8em 1em;
+  overflow-x: auto;
+  margin: 0.8em 0;
+}
+.prose-dark pre code {
+  background: none;
+  padding: 0;
+  color: #c8c8d0;
+}
+.prose-dark hr {
+  border: none;
+  border-top: 1px solid #252530;
+  margin: 1.2em 0;
+}
+.prose-dark table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 0.8em 0;
+  font-size: 12px;
+}
+.prose-dark th {
+  text-align: left;
+  padding: 0.4em 0.6em;
+  border-bottom: 1px solid #252530;
+  color: #8a8a9a;
+  font-weight: 600;
+}
+.prose-dark td {
+  padding: 0.35em 0.6em;
+  border-bottom: 1px solid #1a1a24;
+}
+.prose-dark strong {
+  color: #e8e8ed;
+}
+.prose-dark a {
+  color: #ff9e2c;
+  text-decoration: none;
+}
+.prose-dark a:hover {
+  text-decoration: underline;
+}
+.prose-dark blockquote {
+  border-left: 3px solid #ff9e2c;
+  margin: 0.8em 0;
+  padding: 0.3em 0 0.3em 1em;
+  color: #8a8a9a;
+}

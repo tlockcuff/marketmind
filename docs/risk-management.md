@@ -8,9 +8,9 @@ Risk management is how the bot protects your money. Even a great trade idea can 
 
 | Rule | Default | What It Does |
 |------|---------|-------------|
-| 💼 Max per trade | 10% of account | No single stock can use more than 10% of your money |
-| 📊 Max open trades | 20 | Limits how many stocks you hold at once |
-| 🚨 Daily loss limit | 10% of account | If losses for the day hit 10%, the bot stops trading |
+| 💼 Max per trade | 25% of account | Each trade can use up to 25% of equity |
+| 📊 Max open trades | 30 | Limits how many stocks you hold at once |
+| 🚨 Daily loss limit | 20% of account | If losses for the day hit 20%, the bot stops trading |
 
 ---
 
@@ -20,7 +20,7 @@ Every trade is placed as a **bracket order** — three orders in one:
 
 1. ⬆️ **Entry** — Buy the stock
 2. 🛑 **Stop-loss** — Automatically sell if the price drops too far (default: 3% below entry)
-3. 🎯 **Take-profit** — Automatically sell if the price hits your target (default: 8% above entry)
+3. 🎯 **Take-profit** — Automatically sell if the price hits your target (default: 15% above entry)
 
 The bot uses **ATR** (Average True Range) to adjust these levels. For volatile stocks, stops are set wider so normal price swings don't trigger a premature exit.
 
@@ -35,7 +35,7 @@ The "Pattern Day Trader" rule says accounts under $25,000 can only make 3 day tr
 | Rule | Value |
 |------|-------|
 | 📅 Day trade limit | 3 per 5 days |
-| 💯 Min score for day trade | 80 (only the best setups) |
+| 💯 Min score for day trade | 60 (more freely) |
 | 🔄 Reserved day trades | 1 (kept for emergencies) |
 
 A "day trade" means buying and selling the same stock on the same day. The bot is extra selective about these because they're a limited resource.
@@ -44,13 +44,14 @@ A "day trade" means buying and selling the same stock on the same day. The bot i
 
 ## 🌦️ Market Regime Filter
 
-The bot checks overall market conditions before trading:
+The bot checks overall market conditions — but treats volatility as opportunity, not risk:
 
-- 🔴 **VIX > 30** (high fear index): Raises the score threshold to 75 and reduces position sizes
-- 📉 **SPY trending down** with a buy signal: Raises threshold to 70 (buying against the market is riskier)
-- 🟢 **Normal conditions**: Standard threshold of 65
+- 🔴 **VIX > 30** (high volatility): Lowers threshold to 45 — more trades in volatile markets
+- 📉 **SPY trending down**: Lowers threshold to 45 — shorts thrive here
+- 📈 **SPY trending up**: Lowers threshold to 45 — ride the wave
+- 🟡 **Choppy conditions**: Standard threshold of 50
 
-This prevents the bot from aggressively buying during market-wide selloffs.
+Position sizes are NOT reduced in volatile regimes. High-score trades (80+) get a 1.2x oversize multiplier.
 
 ---
 

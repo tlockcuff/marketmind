@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 from datetime import datetime, date
 from typing import Optional
 from dataclasses import dataclass, field
@@ -7,6 +9,8 @@ from config import settings
 from src.trading.alpaca_client import AlpacaClient
 
 logger = logging.getLogger(__name__)
+
+_DAILY_STATS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "daily_stats.json")
 
 
 @dataclass
@@ -32,18 +36,43 @@ class RiskManager:
         self._init_daily_stats()
 
     def _init_daily_stats(self):
-        """Initialize or reset daily stats."""
+        """Initialize or reset daily stats. Persists starting_equity to survive restarts."""
         today = date.today()
         if self.daily_stats is None or self.daily_stats.date != today:
             account = self.alpaca.get_account()
             equity = account.get("equity", settings.PAPER_PORTFOLIO_SIZE)
+
+            # Try to restore today's starting_equity from disk
+            starting_equity = equity
+            try:
+                with open(_DAILY_STATS_FILE) as f:
+                    saved = json.load(f)
+                if saved.get("date") == str(today):
+                    starting_equity = saved["starting_equity"]
+                    logger.info(f"Restored starting_equity=${starting_equity:,.0f} from disk")
+            except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                pass
+
+            # New day or first run — persist starting_equity
+            if starting_equity == equity:
+                self._save_daily_stats(today, equity)
+
             self.daily_stats = DailyStats(
                 date=today,
-                starting_equity=equity,
-                peak_equity=equity,
+                starting_equity=starting_equity,
+                peak_equity=max(equity, starting_equity),
             )
             self.trading_halted = False
             self.halt_reason = ""
+
+    def _save_daily_stats(self, day: date, starting_equity: float):
+        """Persist starting_equity so it survives restarts."""
+        try:
+            os.makedirs(os.path.dirname(_DAILY_STATS_FILE), exist_ok=True)
+            with open(_DAILY_STATS_FILE, "w") as f:
+                json.dump({"date": str(day), "starting_equity": starting_equity}, f)
+        except Exception as e:
+            logger.warning(f"Failed to save daily stats: {e}")
 
     def can_trade(self) -> tuple[bool, str]:
         """Check if trading is allowed based on risk rules."""

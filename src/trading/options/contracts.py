@@ -49,11 +49,11 @@ class ContractSelector:
         """Find best contract for directional play (buy call/put)."""
         option_type = "call" if direction in ("buy", "long") else "put"
 
-        # Delta range based on score
+        # Delta range — aggressive, wider for more leverage
         if score >= 80:
-            delta_min, delta_max = 0.45, 0.50
+            delta_min, delta_max = 0.55, 0.70
         else:
-            delta_min, delta_max = 0.30, 0.40
+            delta_min, delta_max = 0.40, 0.60
 
         contracts = self._get_chain(
             underlying, option_type,
@@ -253,7 +253,8 @@ class ContractSelector:
         """Fetch option chain from Alpaca and return parsed contracts."""
         try:
             now = datetime.now()
-            exp_min = (now + timedelta(days=dte_min)).strftime("%Y-%m-%d")
+            # 0DTE: use today's date as minimum
+            exp_min = (now + timedelta(days=max(0, dte_min))).strftime("%Y-%m-%d")
             exp_max = (now + timedelta(days=dte_max)).strftime("%Y-%m-%d")
 
             contract_type = ContractType.CALL if option_type == "call" else ContractType.PUT

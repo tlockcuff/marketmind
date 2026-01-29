@@ -34,6 +34,7 @@ from src.trading.options.executor import OptionsExecutor
 from src.trading.options.sizing import OptionsSizer
 from src.trading.options.position_mgr import OptionsPositionManager
 from src.signals.congress_client import CongressClient
+from src.signals.momentum_screener import MomentumScreener
 from src.scheduler.trading_hours import (
     is_market_open,
     is_trading_day,
@@ -79,9 +80,11 @@ class TradingBot:
         self.risk_mgr = RiskManager()
         self.discord = DiscordNotifier()
         self.congress = CongressClient() if settings.CONGRESS_ENABLED else None
+        self.momentum = MomentumScreener()
         self.ticker_blacklist: set = set()  # Tickers that failed data fetch
         self._owned_symbols: set = set()  # Cache of owned symbols for quick lookup
         self._current_regime: str = "choppy"  # Market regime
+        self._recovery_timestamp: datetime | None = None  # Last recovery time
 
         # Options components
         self.options_enabled = settings.OPTIONS_ENABLED
@@ -94,6 +97,117 @@ class TradingBot:
 
         logger.info(f"Trading bot initialized (paper={paper})")
 
+    def _rank_positions_for_close(self, positions: list) -> list:
+        """Rank positions by close priority (highest = close first).
+
+        Factors: unrealized P/L (worst first), hold time (longest first),
+        entry score (lowest first), scale-out level (already took profits).
+        """
+        now = datetime.now()
+        scored = []
+        for p in positions:
+            symbol = p["symbol"]
+            pl = p.get("unrealized_pl", 0)
+            entry_price = p.get("avg_entry", 1)
+            pl_pct = pl / (entry_price * abs(p.get("qty", 1))) if entry_price else 0
+
+            # Get local position data for score/hold time
+            # Untracked positions get worst-case defaults (stale + low conviction)
+            local = self.position_mgr.positions.get(symbol)
+            hold_hours = (now - local.entry_time).total_seconds() / 3600 if local else 24
+            entry_score = local.score if local else 0
+            scale_level = local.scale_out_level if local else 0
+
+            # Composite close priority (higher = close first)
+            priority = 0.0
+            priority += max(-pl_pct, 0) * 40       # worst P/L% weighted heavily
+            priority += min(hold_hours / 24, 1) * 25  # stale positions (cap at 24h)
+            priority += (1 - entry_score / 100) * 20  # low conviction
+            priority += min(scale_level, 2) * 15       # already took partial profits
+
+            scored.append((priority, p))
+            logger.debug(f"Recovery rank {symbol}: priority={priority:.1f} "
+                         f"(pl={pl_pct:+.1%}, hold={hold_hours:.0f}h, score={entry_score}, scale={scale_level})")
+
+        scored.sort(key=lambda x: x[0], reverse=True)
+        return [p for _, p in scored]
+
+    def _recover_buying_power(self) -> bool:
+        """Close lowest-priority positions until buying power is restored."""
+        account = self.alpaca.get_account()
+        if not account:
+            return False
+        equity = account.get("equity", 0)
+        buying_power = account.get("buying_power", 0)
+        target_bp = max(settings.get("recovery_buying_power_min"), equity * settings.get("recovery_buying_power_pct"))
+
+        if buying_power >= target_bp:
+            return True
+
+        logger.warning(f"RECOVERY MODE: buying_power=${buying_power:,.0f}, need ${target_bp:,.0f}")
+
+        # Re-sync local tracking dict so close_position works
+        self.position_mgr._sync_positions()
+
+        positions = self.alpaca.get_positions()
+        # Options can't be closed outside market hours — skip them
+        positions = [p for p in positions if str(p.get("asset_class", "")).lower() != "us_option"]
+        if not positions:
+            logger.warning("Recovery: no equity positions to close")
+            return False
+
+        # Rank by composite close priority
+        positions = self._rank_positions_for_close(positions)
+
+        closed_symbols = []
+        for p in positions:
+            if buying_power >= target_bp:
+                break
+            symbol = p["symbol"]
+            pl = p.get("unrealized_pl", 0)
+            logger.info(f"Recovery: closing {symbol} (P/L ${pl:+,.2f})")
+            # Try local close first; fall back to direct Alpaca close
+            closed = self.position_mgr.close_position(symbol, reason="recovery")
+            if not closed:
+                logger.info(f"Recovery: {symbol} not in local tracker, closing via Alpaca directly")
+                result = self.alpaca.close_position(symbol)
+                closed = result.success
+            if closed:
+                closed_symbols.append(f"{symbol} (${pl:+,.2f})")
+                self._owned_symbols.discard(symbol)
+                self.position_mgr.positions.pop(symbol, None)
+                price = p.get("current_price") or self.market_data.get_current_price(symbol)
+                if price:
+                    get_trade_history().record_close(symbol, price, "recovery")
+                time.sleep(1)  # Settlement delay
+                # Re-check buying power
+                account = self.alpaca.get_account()
+                if account:
+                    buying_power = account.get("buying_power", 0)
+
+        self._recovery_timestamp = datetime.now()
+
+        if closed_symbols:
+            msg = "Closed: " + ", ".join(closed_symbols)
+            self.discord.alert("RECOVERY MODE", msg, "warning")
+            logger.info(f"Recovery complete: {msg}")
+
+        return buying_power >= target_bp
+
+    def _needs_proactive_recovery(self) -> bool:
+        """Check if BP is too low for even a minimum-size trade."""
+        account = self.alpaca.get_account()
+        if not account:
+            return False
+        equity = account.get("equity", 0)
+        buying_power = account.get("buying_power", 0)
+        # Smallest useful trade: equity * position% * lowest score multiplier (0.6)
+        min_trade = equity * settings.get("max_position_pct") * 0.6
+        if buying_power < min_trade and len(self.alpaca.get_positions()) > 0:
+            logger.info(f"Proactive recovery: BP ${buying_power:,.0f} < min trade ${min_trade:,.0f}")
+            return True
+        return False
+
     def run(self):
         """Main trading loop."""
         logger.info("Starting trading bot...")
@@ -105,6 +219,12 @@ class TradingBot:
                 can_trade, msg = self.risk_mgr.can_trade()
                 if can_trade:
                     self._trading_cycle()
+                elif "buying power" in msg.lower():
+                    logger.warning(f"Startup: {msg} — attempting recovery")
+                    if self._recover_buying_power():
+                        logger.info("Startup recovery succeeded, skipping cycle for cooldown")
+                    else:
+                        logger.warning("Startup recovery failed")
                 else:
                     logger.warning(f"Startup cycle skipped: {msg}")
             except Exception as e:
@@ -132,6 +252,15 @@ class TradingBot:
                     time.sleep(60)
                     continue
 
+                # Cooldown gate after recovery
+                if self._recovery_timestamp:
+                    elapsed = (datetime.now() - self._recovery_timestamp).total_seconds()
+                    cooldown = settings.get("recovery_cooldown_minutes") * 60
+                    if elapsed < cooldown:
+                        logger.info(f"Recovery cooldown: {cooldown - elapsed:.0f}s remaining")
+                        time.sleep(60)
+                        continue
+
                 # Check risk limits
                 logger.info("Checking risk limits...")
                 can_trade, msg = self.risk_mgr.can_trade()
@@ -139,18 +268,31 @@ class TradingBot:
                     logger.warning(f"Trading blocked: {msg}")
                     if "loss limit" in msg.lower():
                         self.discord.daily_loss_limit_hit(
-                            settings.DAILY_LOSS_LIMIT_PCT,
+                            settings.get("daily_loss_limit_pct"),
                             self.alpaca.get_account().get("equity", 0),
                         )
+                    elif "buying power" in msg.lower():
+                        if self._recover_buying_power():
+                            logger.info("Recovery succeeded, resuming after cooldown")
+                            continue
+                        logger.warning("Recovery failed, sleeping 5min")
                     time.sleep(300)
+                    continue
+
+                # Proactive recovery: free BP before cycle if too low for any trade
+                if self._needs_proactive_recovery():
+                    self._recover_buying_power()
+                    # Skip cycle this iteration to respect cooldown
+                    time.sleep(60)
                     continue
 
                 # Run trading cycle
                 self._trading_cycle()
 
                 # Sleep until next scan
-                logger.info(f"Sleeping {settings.SCAN_INTERVAL_MINUTES} minutes...")
-                time.sleep(settings.SCAN_INTERVAL_MINUTES * 60)
+                scan_interval = settings.get("scan_interval_minutes")
+                logger.info(f"Sleeping {scan_interval} minutes...")
+                time.sleep(scan_interval * 60)
 
             except KeyboardInterrupt:
                 logger.info("Shutting down...")
@@ -160,6 +302,21 @@ class TradingBot:
                 logger.exception(f"Error in main loop: {e}")
                 self.discord.alert("Bot Error", str(e), "error")
                 time.sleep(60)
+
+    def _check_daily_target(self):
+        """Log daily target progress. Keep trading past target."""
+        target = settings.get_daily_target()
+        if not target:
+            return
+        account = self.alpaca.get_account()
+        if not account:
+            return
+        equity = account.get("equity", 0)
+        daily_pl = equity - self.risk_mgr.daily_stats.starting_equity
+        if daily_pl >= target:
+            logger.info(f"DAILY TARGET ${target:,.0f} REACHED! P/L: ${daily_pl:+,.0f}. Continuing.")
+        else:
+            logger.info(f"Daily target progress: ${daily_pl:+,.0f} / ${target:,.0f}")
 
     def _trading_cycle(self):
         """Single trading cycle."""
@@ -174,11 +331,14 @@ class TradingBot:
         positions = self.alpaca.get_positions()
         self._owned_symbols = {p["symbol"] for p in positions}
 
+        # 1b. Log daily target progress
+        self._check_daily_target()
+
         # 2. Get portfolio-aware advice from Grok
         if positions:
             self._review_portfolio(positions)
 
-        # 3. Check stop/target exits
+        # 3. Check stop/target exits + partial profit-taking
         self._check_positions()
 
         # 3b. Check options exits
@@ -206,7 +366,7 @@ class TradingBot:
                 daily_pl = equity - self.risk_mgr.daily_stats.starting_equity
                 daily_pct = (daily_pl / self.risk_mgr.daily_stats.starting_equity * 100) if self.risk_mgr.daily_stats.starting_equity else 0
                 open_count = len(positions)
-                max_pos = settings.MAX_CONCURRENT_POSITIONS
+                max_pos = settings.get("max_concurrent_positions")
                 market_context += (
                     f"\n\nACCOUNT STATUS:"
                     f"\nEquity: ${equity:,.0f} | Daily P/L: ${daily_pl:+,.0f} ({daily_pct:+.1f}%)"
@@ -223,6 +383,18 @@ class TradingBot:
 
             signals = self.grok.get_trade_ideas(market_context=market_context)
             logger.info(f"Got {len(signals)} signals from Grok")
+
+            # Add momentum screener signals (independent of Grok)
+            try:
+                momentum_signals = self.momentum.scan()
+                if momentum_signals:
+                    # Dedupe: skip tickers already in Grok signals
+                    grok_tickers = {s.ticker for s in signals}
+                    new_momentum = [s for s in momentum_signals if s.ticker not in grok_tickers]
+                    signals.extend(new_momentum)
+                    logger.info(f"Added {len(new_momentum)} momentum screener signals")
+            except Exception as e:
+                logger.warning(f"Momentum screener error: {e}")
 
             for signal in signals:
                 # Stop if both stock and options slots are full
@@ -328,8 +500,9 @@ class TradingBot:
                         opened_at = None
                 if opened_at:
                     hold_minutes = (datetime.now() - opened_at.replace(tzinfo=None)).total_seconds() / 60
-                    if hold_minutes < settings.MIN_HOLD_MINUTES:
-                        logger.info(f"{ticker}: skip Grok exit, held only {hold_minutes:.0f}m (min {settings.MIN_HOLD_MINUTES}m)")
+                    min_hold = settings.get("min_hold_minutes")
+                    if hold_minutes < min_hold:
+                        logger.info(f"{ticker}: skip Grok exit, held only {hold_minutes:.0f}m (min {min_hold}m)")
                         return
 
         if action_type == "exit":
@@ -351,9 +524,50 @@ class TradingBot:
         elif action_type == "hold":
             logger.debug(f"{ticker}: HOLD - {rationale}")
 
-        elif action_type in ("add", "trim"):
-            # TODO: implement partial position changes
-            logger.info(f"Grok {action_type.upper()} for {ticker}: {rationale} (not implemented)")
+        elif action_type == "add":
+            # Add to existing position
+            if ticker not in self.position_mgr.positions:
+                logger.info(f"ADD {ticker}: no existing position, skipping")
+                return
+            pos = self.position_mgr.positions[ticker]
+            price = self.market_data.get_current_price(ticker)
+            if not price:
+                return
+            # Size the add: half of normal position size
+            add_qty = self.position_mgr.get_position_size(price, confidence) // 2
+            if add_qty < 1:
+                return
+            # Validate total doesn't exceed limits
+            valid, msg, add_qty = self.risk_mgr.validate_position_size(ticker, add_qty, price)
+            if not valid:
+                logger.info(f"ADD {ticker} blocked: {msg}")
+                return
+            result = self.position_mgr.alpaca.submit_market_order(
+                symbol=ticker, qty=add_qty, side=pos.direction
+            )
+            if result.success:
+                pos.qty += add_qty
+                logger.info(f"ADD {ticker}: +{add_qty} shares @ ~${price:.2f} ({rationale})")
+                self.discord.alert("Position Added", f"{ticker} +{add_qty} shares", "info")
+
+        elif action_type == "trim":
+            # Trim existing position
+            if ticker not in self.position_mgr.positions:
+                return
+            pos = self.position_mgr.positions[ticker]
+            trim_pct = action.get("trim_pct", 0.50)  # default trim 50%
+            trim_qty = max(1, int(pos.qty * trim_pct))
+            if trim_qty >= pos.qty:
+                # Full exit
+                self._process_portfolio_action({"ticker": ticker, "action": "exit",
+                                                 "confidence": confidence, "rationale": rationale})
+                return
+            if self.position_mgr._partial_close(ticker, trim_qty, f"grok_trim"):
+                logger.info(f"TRIM {ticker}: -{trim_qty} shares ({rationale})")
+                price = self.market_data.get_current_price(ticker)
+                if price:
+                    get_trade_history().record_close(ticker, price, "grok_trim")
+                self.discord.alert("Position Trimmed", f"{ticker} -{trim_qty} shares", "warning")
 
     def _evaluate_signal(self, signal):
         """Evaluate and potentially execute a signal."""
@@ -365,21 +579,21 @@ class TradingBot:
 
         # Handle sell/short signals
         if signal.direction in ("sell", "short"):
-            if not settings.ALLOW_SHORT_SELLING:
-                # Check if we own this stock
-                if ticker not in self._owned_symbols:
-                    return  # Silently skip - we don't own it and can't short
-
-                # We own it and Grok says sell - close the position
-                logger.info(f"Sell signal for {ticker} - closing position")
+            # If we own the stock, close existing long first
+            if ticker in self._owned_symbols:
+                logger.info(f"Sell signal for {ticker} - closing long position")
                 if self.position_mgr.close_position(ticker, reason="grok_sell_signal"):
                     self._owned_symbols.discard(ticker)
-                    # Record close in trade history
                     price = self.market_data.get_current_price(ticker)
                     if price:
                         get_trade_history().record_close(ticker, price, "grok_sell_signal")
                     self.discord.alert("Position Closed", f"{ticker} - Grok sell signal", "warning")
-                return
+
+            if not settings.get("allow_short_selling"):
+                return  # Can't short, done after closing long
+
+            # Fall through to evaluate short as a new position
+            # (don't return — let it go through scoring pipeline below)
 
         # For buy signals: skip if we already own this stock (check EARLY to save API calls)
         if ticker in self._owned_symbols:
@@ -390,7 +604,7 @@ class TradingBot:
 
         # Get market data
         logger.info(f"{ticker}: fetching market data...")
-        df = self.market_data.get_bars(ticker, days=settings.BACKTEST_DAYS)
+        df = self.market_data.get_bars(ticker, days=settings.get("backtest_days"))
         if df is None or df.empty:
             logger.warning(f"No market data for {ticker} - blacklisting")
             self.ticker_blacklist.add(ticker)
@@ -436,14 +650,15 @@ class TradingBot:
 
         logger.info(f"{ticker} score: {score.total_score} ({score.action})")
 
-        # Apply market regime filter
+        # Apply market regime filter — volatile/trending = opportunity, lower threshold
         regime = getattr(self, "_current_regime", "choppy")
-        score_threshold = settings.MIN_SCORE_THRESHOLD
+        score_threshold = settings.get("min_score_threshold")
         if regime == "high_volatility":
-            score_threshold = 75
-        elif regime == "trending_down" and signal.direction in ("buy", "long"):
-            score_threshold = 70
-        # sizing adjustments handled in _execute_trade
+            score_threshold = 45  # vol = opportunity
+        elif regime == "trending_down":
+            score_threshold = 45  # shorts thrive here
+        elif regime == "trending_up":
+            score_threshold = 45  # ride the wave
 
         # Resolve sector
         sector = get_sector(ticker, signal.sector)
@@ -506,12 +721,9 @@ class TradingBot:
         atr = indicators.atr if indicators else None
         qty = self.position_mgr.get_position_size(current_price, score.total_score, atr=atr)
 
-        # Regime-based sizing adjustment
-        regime = getattr(self, "_current_regime", "choppy")
-        if regime == "high_volatility":
-            qty = max(1, int(qty * 0.5))
-        elif regime == "choppy":
-            qty = max(1, int(qty * 0.7))
+        # High-score oversize: 1.2x for scores 80+
+        if score.total_score >= 80:
+            qty = max(1, int(qty * 1.2))
 
         if qty < 1:
             logger.info(f"Position size too small for {ticker}")
@@ -597,18 +809,18 @@ class TradingBot:
         # If options slots available and score qualifies
         if can_options:
             # Credit spread for high-score + Grok flagged
-            if (score.total_score >= settings.OPTIONS_MIN_SCORE_SPREAD
+            if (score.total_score >= settings.get("options_min_score_spread")
                     and signal.options_strategy == "spread"):
                 logger.info(f"Options: routing {signal.ticker} to spread (score={score.total_score})")
                 return "spread"
 
             # Directional option: when score qualifies, or stock slots full
-            if score.total_score >= settings.OPTIONS_MIN_SCORE_DIRECTIONAL:
+            if score.total_score >= settings.get("options_min_score_directional"):
                 logger.info(f"Options: routing {signal.ticker} to directional_option (score={score.total_score})")
                 return "directional_option"
 
             # Stock positions full — try options even at lower scores
-            if not can_stock and score.total_score >= settings.MIN_SCORE_THRESHOLD:
+            if not can_stock and score.total_score >= settings.get("min_score_threshold"):
                 logger.info(f"Options: stock full, routing {signal.ticker} to directional_option (score={score.total_score})")
                 return "directional_option"
 
@@ -833,6 +1045,12 @@ def main():
         action="store_true",
         help="Show API usage stats and exit",
     )
+    parser.add_argument(
+        "--target",
+        type=float,
+        default=None,
+        help="Daily P/L target in dollars (e.g. --target 1000)",
+    )
     args = parser.parse_args()
 
     # Setup logging
@@ -872,6 +1090,11 @@ def main():
         cfg.ALPACA_SECRET_KEY = cfg.ALPACA_LIVE_SECRET_KEY
         cfg.ALPACA_BASE_URL = "https://api.alpaca.markets"
         cfg.PAPER_TRADING_24_7 = False
+
+    # Set daily target if specified
+    if args.target is not None:
+        settings.set_daily_target(args.target)
+        logger.info(f"Daily P/L target set: ${args.target:,.0f}")
 
     paper = settings.is_paper_mode()
 

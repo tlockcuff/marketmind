@@ -1,4 +1,6 @@
+import json
 import os
+from typing import Any, Optional
 from dotenv import load_dotenv
 
 load_dotenv();
@@ -32,13 +34,18 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 PAPER_PORTFOLIO_SIZE = 100_000 # 100,000 paper portfolio size
 
 # Risk parameters
-MAX_POSITION_PCT = 0.15 # 15% of equity per trade
-MAX_CONCURRENT_POSITIONS = 20 # 20 concurrent positions
-STOP_LOSS_PCT = 0.05 # 5% stop loss
-TAKE_PROFIT_PCT = 0.12 # 12% take profit
-DAILY_LOSS_LIMIT_PCT = 0.10 # 10% daily loss limit
-MIN_SCORE_THRESHOLD = 65 # 65% minimum score to trade   
+MAX_POSITION_PCT = 0.25 # 25% of equity per trade
+MAX_CONCURRENT_POSITIONS = 30 # 30 concurrent positions
+STOP_LOSS_PCT = 0.03 # 3% stop loss (tighter = less bleed)
+TAKE_PROFIT_PCT = 0.15 # 15% take profit (let winners run)
+DAILY_LOSS_LIMIT_PCT = 0.20 # 20% daily loss limit
+MIN_SCORE_THRESHOLD = 50 # 50% minimum score to trade
 SCAN_INTERVAL_MINUTES = 5 # 5 minutes between scans
+
+# Recovery mode — close worst losers when buying power too low
+RECOVERY_BUYING_POWER_PCT = 0.10    # recover to 10% of equity free
+RECOVERY_BUYING_POWER_MIN = 10000   # ...or $10000, whichever
+RECOVERY_COOLDOWN_MINUTES = 5       # cooldown after recovery
 
 # Scoring weights
 SCORING_WEIGHTS = {
@@ -50,14 +57,14 @@ SCORING_WEIGHTS = {
 }
 
 # Time-based exits
-MAX_HOLD_HOURS = 48  # Force close after this hours
+MAX_HOLD_HOURS = 24  # Force close after this hours
 STALE_POSITION_HOURS = 24  # Tighten stop to breakeven + 0.5%
 
 # Backtest
 BACKTEST_DAYS = 90 # 90 days of backtest data
 
 # Minimum hold time before Grok can exit a position
-MIN_HOLD_MINUTES = 30 # 30 minutes minimum hold time
+MIN_HOLD_MINUTES = 10 # 10 minutes minimum hold time
 
 # Trading mode
 ALLOW_SHORT_SELLING = True # Allow short selling
@@ -67,23 +74,23 @@ PAPER_TRADING_24_7 = TRADING_MODE == "paper"  # 24/7 only for paper
 # A day trade = buy AND sell same stock same day
 DAY_TRADE_LIMIT = 3  # Max day trades per 5-day rolling window (PDT rule)
 PDT_EQUITY_THRESHOLD = 25_000  # Accounts above this are exempt from PDT
-MIN_SCORE_FOR_DAY_TRADE = 80  # Only day trade high-confidence signals
+MIN_SCORE_FOR_DAY_TRADE = 60  # Day trade more freely
 RESERVE_DAY_TRADES = 1  # Always keep 1 day trade for emergencies
 
 # Options trading
 OPTIONS_ENABLED = True # Enable options trading
-OPTIONS_MAX_POSITION_PCT = 0.02       # 2% equity per options trade
-OPTIONS_MIN_SCORE_DIRECTIONAL = 65 # 65% minimum score for directional options
+OPTIONS_MAX_POSITION_PCT = 0.05       # 5% equity per options trade
+OPTIONS_MIN_SCORE_DIRECTIONAL = 50 # 50% minimum score for directional options
 OPTIONS_MIN_SCORE_SPREAD = 80 # 80% minimum score for spread options
 OPTIONS_PROFIT_TARGET_DIRECTIONAL = 0.50 # 50% profit target for directional options
 OPTIONS_STOP_LOSS_DIRECTIONAL = 0.50 # 50% stop loss for directional options
 OPTIONS_PROFIT_TARGET_SPREAD = 0.50   # close at 50% max profit
-OPTIONS_DTE_MIN = 7 # 7 days minimum DTE
-OPTIONS_DTE_MAX = 21 # 21 days maximum DTE
+OPTIONS_DTE_MIN = 0 # 0DTE enabled
+OPTIONS_DTE_MAX = 14 # 14 days maximum DTE (shorter = more leverage)
 OPTIONS_DTE_MAX_SPREAD = 30 # 30 days maximum spread DTE
 OPTIONS_DTE_EXIT = 2 # 2 days minimum DTE exit
-OPTIONS_MAX_CONCURRENT = 10            # separate from stock limit
-OPTIONS_DELTA_RANGE = (0.30, 0.50) # 30% minimum delta range
+OPTIONS_MAX_CONCURRENT = 20            # separate from stock limit
+OPTIONS_DELTA_RANGE = (0.40, 0.70) # wider delta range for more leverage
 OPTIONS_CC_DELTA_RANGE = (0.20, 0.30) # 20% minimum delta range for covered calls
 OPTIONS_MIN_OPEN_INTEREST = 100 # 100 minimum open interest
 OPTIONS_MAX_SPREAD_PCT = 0.10 # 10% maximum spread percentage
@@ -95,8 +102,144 @@ CONGRESS_ENABLED = os.getenv("CONGRESS_ENABLED", "true").lower() == "true"
 CONGRESS_CACHE_TTL_HOURS = 6 # 6 hours cache ttl
 CONGRESS_LOOKBACK_DAYS = 30 # 30 days lookback
 
+# Daily P/L target (set via env, CLI --target, or web API)
+DAILY_TARGET = float(os.getenv("DAILY_TARGET", "0")) or None  # e.g. 1000 = $1000 target
+_DAILY_TARGET_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "daily_target.json")
+
+def get_daily_target() -> Optional[float]:
+    """Get daily target from file (web API updates) or settings."""
+    import json
+    try:
+        with open(_DAILY_TARGET_FILE) as f:
+            data = json.load(f)
+            return data.get("target")
+    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        pass
+    return DAILY_TARGET
+
+def set_daily_target(target: Optional[float]):
+    """Persist daily target to shared file."""
+    import json
+    os.makedirs(os.path.dirname(_DAILY_TARGET_FILE), exist_ok=True)
+    with open(_DAILY_TARGET_FILE, "w") as f:
+        json.dump({"target": target}, f)
+
 def is_paper_mode() -> bool:
     return TRADING_MODE == "paper"
 
 def is_live_mode() -> bool:
     return TRADING_MODE == "live"
+
+# ---------------------------------------------------------------------------
+# Live-editable config override system
+# ---------------------------------------------------------------------------
+
+_CONFIG_OVERRIDES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "config_overrides.json")
+
+EDITABLE_SETTINGS = {
+    # Risk
+    "max_position_pct":          {"type": "float", "min": 0.01, "max": 1.0,  "label": "Max Position %",         "section": "Risk"},
+    "stop_loss_pct":             {"type": "float", "min": 0.005,"max": 0.5,  "label": "Stop Loss %",            "section": "Risk"},
+    "take_profit_pct":           {"type": "float", "min": 0.01, "max": 1.0,  "label": "Take Profit %",          "section": "Risk"},
+    "daily_loss_limit_pct":      {"type": "float", "min": 0.01, "max": 1.0,  "label": "Daily Loss Limit %",     "section": "Risk"},
+    "max_concurrent_positions":  {"type": "int",   "min": 1,    "max": 100,  "label": "Max Positions",           "section": "Risk"},
+    # Trading
+    "min_score_threshold":       {"type": "int",   "min": 1,    "max": 100,  "label": "Min Score",               "section": "Trading"},
+    "scan_interval_minutes":     {"type": "int",   "min": 1,    "max": 60,   "label": "Scan Interval (min)",     "section": "Trading"},
+    "max_hold_hours":            {"type": "int",   "min": 1,    "max": 168,  "label": "Max Hold Hours",          "section": "Trading"},
+    "stale_position_hours":      {"type": "int",   "min": 1,    "max": 168,  "label": "Stale Position Hours",    "section": "Trading"},
+    "allow_short_selling":       {"type": "bool",                             "label": "Allow Short Selling",     "section": "Trading"},
+    "backtest_days":             {"type": "int",   "min": 7,    "max": 365,  "label": "Backtest Days",           "section": "Trading"},
+    "min_hold_minutes":          {"type": "int",   "min": 0,    "max": 120,  "label": "Min Hold Minutes",        "section": "Trading"},
+    # Day Trade
+    "day_trade_limit":           {"type": "int",   "min": 0,    "max": 50,   "label": "Day Trade Limit",         "section": "Day Trade"},
+    "min_score_for_day_trade":   {"type": "int",   "min": 1,    "max": 100,  "label": "Min Score Day Trade",     "section": "Day Trade"},
+    "reserve_day_trades":        {"type": "int",   "min": 0,    "max": 10,   "label": "Reserve Day Trades",      "section": "Day Trade"},
+    # Options
+    "options_enabled":           {"type": "bool",                             "label": "Options Enabled",         "section": "Options"},
+    "options_max_position_pct":  {"type": "float", "min": 0.01, "max": 0.5,  "label": "Options Max Position %",  "section": "Options"},
+    "options_min_score_directional": {"type": "int", "min": 1,  "max": 100,  "label": "Options Min Score Dir",   "section": "Options"},
+    "options_min_score_spread":  {"type": "int",   "min": 1,    "max": 100,  "label": "Options Min Score Spread","section": "Options"},
+    "options_dte_min":           {"type": "int",   "min": 0,    "max": 30,   "label": "Options DTE Min",         "section": "Options"},
+    "options_dte_max":           {"type": "int",   "min": 1,    "max": 90,   "label": "Options DTE Max",         "section": "Options"},
+    "options_max_concurrent":    {"type": "int",   "min": 1,    "max": 100,  "label": "Options Max Concurrent",  "section": "Options"},
+    # Recovery
+    "recovery_buying_power_pct": {"type": "float", "min": 0.01, "max": 0.5,  "label": "Recovery BP %",           "section": "Recovery"},
+    "recovery_buying_power_min": {"type": "float", "min": 100,  "max": 100000,"label": "Recovery BP Min $",      "section": "Recovery"},
+    "recovery_cooldown_minutes": {"type": "int",   "min": 0,    "max": 60,   "label": "Recovery Cooldown (min)", "section": "Recovery"},
+}
+
+
+def get_config_overrides() -> dict:
+    """Read overrides from file."""
+    try:
+        with open(_CONFIG_OVERRIDES_FILE) as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError):
+        return {}
+
+
+def set_config_overrides(overrides: dict):
+    """Write overrides to file. Merges with existing."""
+    current = get_config_overrides()
+    current.update(overrides)
+    # Remove keys set to None (reset)
+    current = {k: v for k, v in current.items() if v is not None}
+    os.makedirs(os.path.dirname(_CONFIG_OVERRIDES_FILE), exist_ok=True)
+    with open(_CONFIG_OVERRIDES_FILE, "w") as f:
+        json.dump(current, f, indent=2)
+
+
+def clear_config_overrides(keys: Optional[list] = None):
+    """Clear all overrides or specific keys."""
+    if keys is None:
+        try:
+            os.remove(_CONFIG_OVERRIDES_FILE)
+        except FileNotFoundError:
+            pass
+    else:
+        current = get_config_overrides()
+        for k in keys:
+            current.pop(k, None)
+        os.makedirs(os.path.dirname(_CONFIG_OVERRIDES_FILE), exist_ok=True)
+        with open(_CONFIG_OVERRIDES_FILE, "w") as f:
+            json.dump(current, f, indent=2)
+
+
+def get(key: str) -> Any:
+    """Get setting value: override if set, else module constant."""
+    overrides = get_config_overrides()
+    lower_key = key.lower()
+    if lower_key in overrides:
+        return overrides[lower_key]
+    # Fall back to module constant
+    upper_key = key.upper()
+    return globals().get(upper_key, globals().get(lower_key))
+
+
+def validate_setting(key: str, value: Any) -> tuple[bool, str]:
+    """Validate a setting value against EDITABLE_SETTINGS metadata."""
+    meta = EDITABLE_SETTINGS.get(key)
+    if not meta:
+        return False, f"unknown setting: {key}"
+    t = meta["type"]
+    if t == "bool":
+        if not isinstance(value, bool):
+            return False, f"{key} must be boolean"
+    elif t == "int":
+        if not isinstance(value, (int, float)):
+            return False, f"{key} must be numeric"
+        value = int(value)
+        if "min" in meta and value < meta["min"]:
+            return False, f"{key} min is {meta['min']}"
+        if "max" in meta and value > meta["max"]:
+            return False, f"{key} max is {meta['max']}"
+    elif t == "float":
+        if not isinstance(value, (int, float)):
+            return False, f"{key} must be numeric"
+        value = float(value)
+        if "min" in meta and value < meta["min"]:
+            return False, f"{key} min is {meta['min']}"
+        if "max" in meta and value > meta["max"]:
+            return False, f"{key} max is {meta['max']}"
+    return True, ""

@@ -41,9 +41,9 @@ def calculate_trade_score(
     Weights:
     - Grok confidence: 20%
     - Technical alignment: 30%
-    - Backtest performance: 25%
+    - Backtest performance: 20%
     - Volume/momentum: 15%
-    - Risk/reward ratio: 10%
+    - Risk/reward ratio: 15%
     """
     weights = settings.SCORING_WEIGHTS
 

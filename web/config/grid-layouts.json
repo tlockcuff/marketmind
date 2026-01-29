@@ -1,0 +1,38 @@
+{
+  "lg": [
+    { "i": "positions", "x": 0, "y": 0, "w": 16, "h": 12, "minW": 6, "minH": 4 },
+    { "i": "options", "x": 0, "y": 12, "w": 16, "h": 8, "minW": 6, "minH": 4 },
+    { "i": "orders", "x": 0, "y": 20, "w": 16, "h": 8, "minW": 6, "minH": 4 },
+    { "i": "news", "x": 0, "y": 28, "w": 16, "h": 10, "minW": 6, "minH": 4 },
+    { "i": "account", "x": 16, "y": 0, "w": 8, "h": 8, "minW": 4, "minH": 4 },
+    { "i": "target", "x": 16, "y": 8, "w": 8, "h": 4, "minW": 4, "minH": 3 },
+    { "i": "stats", "x": 16, "y": 12, "w": 8, "h": 6, "minW": 4, "minH": 4 },
+    { "i": "config", "x": 16, "y": 18, "w": 8, "h": 8, "minW": 4, "minH": 4 },
+    { "i": "api-usage", "x": 16, "y": 26, "w": 8, "h": 6, "minW": 4, "minH": 4 },
+    { "i": "logs", "x": 0, "y": 38, "w": 24, "h": 8, "minW": 8, "minH": 4 }
+  ],
+  "md": [
+    { "i": "positions", "x": 0, "y": 0, "w": 14, "h": 12, "minW": 6, "minH": 4 },
+    { "i": "options", "x": 0, "y": 12, "w": 14, "h": 8, "minW": 6, "minH": 4 },
+    { "i": "orders", "x": 0, "y": 20, "w": 14, "h": 8, "minW": 6, "minH": 4 },
+    { "i": "news", "x": 0, "y": 28, "w": 14, "h": 10, "minW": 6, "minH": 4 },
+    { "i": "account", "x": 14, "y": 0, "w": 6, "h": 8, "minW": 4, "minH": 4 },
+    { "i": "target", "x": 14, "y": 8, "w": 6, "h": 4, "minW": 4, "minH": 3 },
+    { "i": "stats", "x": 14, "y": 12, "w": 6, "h": 6, "minW": 4, "minH": 4 },
+    { "i": "config", "x": 14, "y": 18, "w": 6, "h": 8, "minW": 4, "minH": 4 },
+    { "i": "api-usage", "x": 14, "y": 26, "w": 6, "h": 6, "minW": 4, "minH": 4 },
+    { "i": "logs", "x": 0, "y": 38, "w": 20, "h": 8, "minW": 8, "minH": 4 }
+  ],
+  "sm": [
+    { "i": "positions", "x": 0, "y": 0, "w": 12, "h": 12, "minW": 6, "minH": 4 },
+    { "i": "options", "x": 0, "y": 12, "w": 12, "h": 8, "minW": 6, "minH": 4 },
+    { "i": "orders", "x": 0, "y": 20, "w": 12, "h": 8, "minW": 6, "minH": 4 },
+    { "i": "account", "x": 0, "y": 28, "w": 12, "h": 8, "minW": 4, "minH": 4 },
+    { "i": "target", "x": 0, "y": 36, "w": 12, "h": 4, "minW": 4, "minH": 3 },
+    { "i": "stats", "x": 0, "y": 40, "w": 12, "h": 6, "minW": 4, "minH": 4 },
+    { "i": "config", "x": 0, "y": 46, "w": 12, "h": 8, "minW": 4, "minH": 4 },
+    { "i": "api-usage", "x": 0, "y": 54, "w": 12, "h": 6, "minW": 4, "minH": 4 },
+    { "i": "news", "x": 0, "y": 60, "w": 12, "h": 10, "minW": 6, "minH": 4 },
+    { "i": "logs", "x": 0, "y": 70, "w": 12, "h": 8, "minW": 8, "minH": 4 }
+  ]
+}
