@@ -4,8 +4,7 @@ import { useState, useCallback } from "react";
 import type { Config } from "@/lib/types";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SkeletonRows } from "@/components/ui/skeleton";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getApiUrl } from "@/lib/utils";
 
 interface Props {
   config: Config | null;
@@ -45,7 +44,7 @@ export function ConfigPanel({ config }: Props) {
           payload[key] = parseFloat(raw);
         }
       }
-      const res = await fetch(`${API_URL}/api/config`, {
+      const res = await fetch(`${getApiUrl()}/api/config`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -67,7 +66,7 @@ export function ConfigPanel({ config }: Props) {
     setSaving(true);
     setError(null);
     try {
-      await fetch(`${API_URL}/api/config`, { method: "DELETE" });
+      await fetch(`${getApiUrl()}/api/config`, { method: "DELETE" });
       setEdits({});
     } catch (e) {
       setError(String(e));

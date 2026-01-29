@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import type { Account } from "@/lib/types";
-
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+import { getApiUrl } from "@/lib/utils";
 
 interface Props {
   account: Account | null;
@@ -16,7 +15,7 @@ export function TargetPanel({ account }: Props) {
 
   const fetchTarget = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/api/target`);
+      const res = await fetch(`${getApiUrl()}/api/target`);
       const data = await res.json();
       setTarget(data.target ?? null);
       if (data.target) setInput(String(data.target));
@@ -31,7 +30,7 @@ export function TargetPanel({ account }: Props) {
     setLoading(true);
     try {
       const value = input.trim() === "" ? null : parseFloat(input);
-      await fetch(`${API_URL}/api/target`, {
+      await fetch(`${getApiUrl()}/api/target`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target: value }),
@@ -44,7 +43,7 @@ export function TargetPanel({ account }: Props) {
   const clearTarget = async () => {
     setLoading(true);
     try {
-      await fetch(`${API_URL}/api/target`, {
+      await fetch(`${getApiUrl()}/api/target`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ target: null }),

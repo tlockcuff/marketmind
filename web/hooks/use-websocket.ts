@@ -2,8 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import type { DashboardData } from "@/lib/types";
-
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || "ws://localhost:8000/ws";
+import { getWsUrl } from "@/lib/utils";
 const RECONNECT_DELAY = 2000;
 const MAX_RECONNECT_DELAY = 30000;
 
@@ -18,7 +17,7 @@ export function useWebSocket() {
     if (wsRef.current?.readyState === WebSocket.OPEN) return;
 
     try {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(getWsUrl());
       wsRef.current = ws;
 
       ws.onopen = () => {

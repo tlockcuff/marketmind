@@ -36,9 +36,6 @@ services:
       dockerfile: web/Dockerfile
     ports:
       - "5000:5000"
-    environment:
-      - NEXT_PUBLIC_WS_URL=ws://localhost:8000/ws
-      - NEXT_PUBLIC_API_URL=http://localhost:8000
     depends_on:
       api:
         condition: service_healthy
