@@ -83,7 +83,7 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 ```bash
 docker compose up -d
 ```
-Runs bot, API (:8989), and web (:5000) in containers with auto-restart. Requires an external PostgreSQL instance — set `DATABASE_URL` in `.env`.
+Runs bot, API (:2323), and web (:5000) in containers with auto-restart. Requires an external PostgreSQL instance — set `DATABASE_URL` in `.env`.
 
 ### PostgreSQL
 

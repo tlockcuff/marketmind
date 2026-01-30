@@ -19,6 +19,6 @@ COPY . /app
 ENV PYTHONPATH=/app
 ENV PYTHONUNBUFFERED=1
 
-EXPOSE 8989
+EXPOSE 2323
 
-CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "8989"]
+CMD ["uvicorn", "api.server:app", "--host", "0.0.0.0", "--port", "2323"]

@@ -3,7 +3,7 @@
   "private": true,
   "scripts": {
     "dev": "concurrently --kill-others -n api,web -c green,yellow \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:api": "PYTHONPATH=. ./venv/bin/uvicorn api.server:app --host :: --port 8989 --reload",
+    "dev:api": "PYTHONPATH=. ./venv/bin/uvicorn api.server:app --host :: --port 2323 --reload",
     "dev:web": "cd web && npm run dev -- --port 5000",
     "prod:web": "cd web && npm install"
   },
