@@ -9,5 +9,5 @@ if [ -f .env ]; then
 fi
 
 export PYTHONPATH="$(pwd)"
-echo "Starting API server on http://0.0.0.0:8000"
-uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload
+echo "Starting API server on http://0.0.0.0:8989"
+uvicorn api.server:app --host 0.0.0.0 --port 8989 --reload
