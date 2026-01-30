@@ -6,19 +6,18 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
- * Local dev: API on :2323, web on :3000/5000 — connect directly to :2323
- * Production: use API_BASE_URL env var
+ * Get API base URL
+ * - Production (IP:port): API on same host, port 2323
+ * - Docker/nginx (same origin): use relative path
+ * - Local dev: API on :2323
  */
 function getApiBase(): string {
-  // Use API_BASE_URL env var if set (production)
-  if (process.env.API_BASE_URL) {
-    return process.env.API_BASE_URL;
-  }
-  
   if (typeof window === "undefined") return "http://localhost:2323";
-  // Empty port means nginx/prod is in front — use same origin
+  
+  // Empty port (80/443) means nginx is proxying — use same origin
   if (window.location.port === "") return "";
-  // Local dev — API is on :2323
+  
+  // Production: API on same hostname, port 2323
   return `${window.location.protocol}//${window.location.hostname}:2323`;
 }
 
@@ -27,18 +26,15 @@ export function getApiUrl(): string {
 }
 
 export function getWsUrl(): string {
-  // Use API_BASE_URL env var if set (production)
-  if (process.env.API_BASE_URL) {
-    const wsUrl = process.env.API_BASE_URL.replace(/^http/, "ws");
-    return `${wsUrl}/ws`;
-  }
+  if (typeof window === "undefined") return "ws://localhost:2323/ws";
   
-  if (typeof window === "undefined") return "ws://127.0.0.1:2323/ws";
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  // Empty port means nginx/prod is in front — use same origin
+  
+  // Empty port (80/443) means nginx is proxying
   if (window.location.port === "") {
     return `${proto}//${window.location.host}/ws`;
   }
-  // Local dev — API is on :2323 (use 127.0.0.1 to avoid IPv6 issues)
-  return `${proto}//127.0.0.1:2323/ws`;
+  
+  // Production: WebSocket on same hostname, port 2323
+  return `${proto}//${window.location.hostname}:2323/ws`;
 }
