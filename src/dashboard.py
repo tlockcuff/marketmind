@@ -30,7 +30,7 @@ from src.trading.trade_history import get_trade_history
 from src.signals.usage_tracker import get_tracker
 from src.scheduler.trading_hours import format_market_status, now_et, MARKET_OPEN, MARKET_CLOSE, EARLY_CLOSE
 from config.holidays import EARLY_CLOSE_DAYS
-from src.trading.options.position_mgr import OptionsPositionManager, _get_positions_file
+from src.trading.options.position_mgr import OptionsPositionManager
 
 console = Console()
 
@@ -349,17 +349,29 @@ class Dashboard:
         table.add_column("Max Loss", justify="right", width=10)
         table.add_column("Max Profit", justify="right", width=10)
 
-        positions_file = _get_positions_file()
         options_data = []
-        if positions_file.exists():
-            try:
-                import json
-                data = json.loads(positions_file.read_text())
-                for key, val in data.get("positions", {}).items():
-                    if val.get("status", "").startswith("open"):
-                        options_data.append(val)
-            except Exception:
-                pass
+        try:
+            from src.db import get_db
+            import os
+            mode = "live" if os.environ.get("TRADING_MODE", "paper").lower() == "live" else "paper"
+            with get_db() as conn:
+                rows = conn.execute(
+                    """SELECT strategy, underlying, contracts,
+                              net_debit_credit, max_loss, max_profit, status
+                       FROM options_positions
+                       WHERE mode = %s AND status = 'open'""",
+                    (mode,),
+                ).fetchall()
+                for r in rows:
+                    options_data.append({
+                        "strategy": r[0], "underlying": r[1],
+                        "contracts": r[2] or [], "net_debit_credit": float(r[3]) if r[3] else 0,
+                        "max_loss": float(r[4]) if r[4] else 0,
+                        "max_profit": float(r[5]) if r[5] else 0,
+                        "status": r[6],
+                    })
+        except Exception:
+            pass
 
         if options_data:
             for pos in options_data:
@@ -518,7 +530,7 @@ class Dashboard:
         table.add_row("Reserve DTs", f"{settings.RESERVE_DAY_TRADES}")
         # Options
         table.add_row("[bold]Options[/]", "")
-        table.add_row("Options", "On" if settings.OPTIONS_ENABLED else "Off")
+        table.add_row("Options", "On" if settings.get("options_enabled") else "Off")
         table.add_row("Max Opts Pos", f"{settings.OPTIONS_MAX_POSITION_PCT:.0%}")
         table.add_row("Min Score Dir", f"{settings.OPTIONS_MIN_SCORE_DIRECTIONAL}")
         table.add_row("Min Score Sprd", f"{settings.OPTIONS_MIN_SCORE_SPREAD}")

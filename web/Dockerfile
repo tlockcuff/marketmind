@@ -25,8 +25,8 @@ COPY --from=builder /app/web/public ./web/public
 COPY --from=builder --chown=nextjs:nodejs /app/web/.next/static ./web/.next/static
 
 USER nextjs
-EXPOSE 5000
-ENV PORT=5000
+EXPOSE 3000
+ENV PORT=3000
 ENV HOSTNAME="0.0.0.0"
 
 # standalone nests server under web/ due to turbopack.root

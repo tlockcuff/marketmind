@@ -1,11 +1,9 @@
-"""Core data provider - reads same sources as the TUI dashboard."""
+"""Core data provider - reads from PostgreSQL database."""
 
 from __future__ import annotations
 
-import json
 import os
 import sys
-from collections import deque
 from pathlib import Path
 from typing import Optional
 
@@ -13,6 +11,7 @@ PROJECT_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(PROJECT_ROOT))
 
 from config import settings
+from src.db import get_db
 from src.trading.alpaca_client import AlpacaClient
 from src.trading.trade_history import get_trade_history
 from src.signals.usage_tracker import get_tracker
@@ -27,39 +26,65 @@ from src.scheduler.trading_hours import (
     EARLY_CLOSE,
 )
 from config.holidays import EARLY_CLOSE_DAYS
-from src.trading.options.position_mgr import _get_positions_file
+from alpaca.data.historical.stock import StockHistoricalDataClient
+from alpaca.data.requests import StockSnapshotRequest
 
-# Singleton client
+# Singleton clients
 _alpaca: AlpacaClient | None = None
+_data_client: StockHistoricalDataClient | None = None
+
+
+def _keys_configured() -> bool:
+    """Check if Alpaca keys are available."""
+    return bool(settings.ALPACA_API_KEY and settings.ALPACA_SECRET_KEY)
 
 
 def _client() -> AlpacaClient:
     global _alpaca
     if _alpaca is None:
+        settings._resolve_alpaca_keys()
+        if not _keys_configured():
+            return None
         _alpaca = AlpacaClient()
     return _alpaca
 
 
-def _log_file() -> Path:
-    mode = os.environ.get("TRADING_MODE", "paper").lower()
-    prefix = "live" if mode == "live" else "paper"
-    return PROJECT_ROOT / "logs" / f"{prefix}_trading.log"
+def _data_client_() -> StockHistoricalDataClient:
+    global _data_client
+    if _data_client is None:
+        settings._resolve_alpaca_keys()
+        if not _keys_configured():
+            return None
+        _data_client = StockHistoricalDataClient(
+            settings.ALPACA_API_KEY,
+            settings.ALPACA_SECRET_KEY,
+        )
+    return _data_client
 
 
-def _lock_file() -> Path:
-    return PROJECT_ROOT / "logs" / "bot.lock"
+def _mode() -> str:
+    return "live" if os.environ.get("TRADING_MODE", "paper").lower() == "live" else "paper"
 
 
 def _bot_running() -> bool:
-    lock = _lock_file()
-    if not lock.exists():
-        return False
-    try:
-        pid = int(lock.read_text().strip())
-        os.kill(pid, 0)
+    """Check if bot is running via API BotManager or bot_instances table."""
+    from api.bot_manager import get_bot_manager
+    if get_bot_manager().is_running():
         return True
-    except (ValueError, ProcessLookupError, PermissionError):
-        return False
+    try:
+        with get_db() as conn:
+            rows = conn.execute("SELECT pid FROM bot_instances").fetchall()
+            for row in rows:
+                pid = row[0]
+                try:
+                    os.kill(pid, 0)
+                    return True
+                except (ProcessLookupError, PermissionError):
+                    conn.execute("DELETE FROM bot_instances WHERE pid = %s", (pid,))
+                    conn.commit()
+    except Exception:
+        pass
+    return False
 
 
 # ---------------------------------------------------------------------------
@@ -68,19 +93,25 @@ def _bot_running() -> bool:
 
 def get_account() -> dict:
     try:
-        return _client().get_account()
+        c = _client()
+        if c is None:
+            return {"error": "Alpaca keys not configured"}
+        return c.get_account()
     except Exception as e:
         return {"error": str(e)}
 
 
 def get_positions() -> list[dict]:
     try:
-        positions = _client().get_positions()
+        c = _client()
+        if c is None:
+            return []
+        positions = c.get_positions()
         history = get_trade_history()
-        history._load()  # reload from disk
+        history._load()  # reload from DB
         for pos in positions:
             symbol = pos.get("symbol", "")
-            pos["name"] = _client().get_asset_name(symbol)
+            pos["name"] = c.get_asset_name(symbol)
             trade = history.trades.get(symbol, {})
             pos["rationale"] = trade.get("grok_rationale", "")
             pos["score"] = trade.get("score", 0)
@@ -90,34 +121,52 @@ def get_positions() -> list[dict]:
 
 
 def get_options() -> list[dict]:
+    mode = _mode()
     try:
-        path = _get_positions_file()
-        if not path.exists():
-            return []
-        data = json.loads(path.read_text())
-        positions = data.get("positions", {})
-        return [
-            {**v, "key": k}
-            for k, v in positions.items()
-            if v.get("status") == "open"
-        ]
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT key, strategy, underlying, contracts, entry_time,
+                          net_debit_credit, max_loss, max_profit, score,
+                          profit_target_pct, stop_loss_pct, dte_exit,
+                          entry_underlying_price, status
+                   FROM options_positions
+                   WHERE mode = %s AND status = 'open'""",
+                (mode,),
+            ).fetchall()
+            return [
+                {
+                    "key": r[0], "strategy": r[1], "underlying": r[2],
+                    "contracts": r[3], "entry_time": r[4].isoformat() if r[4] else "",
+                    "net_debit_credit": float(r[5]) if r[5] else 0,
+                    "max_loss": float(r[6]) if r[6] else 0,
+                    "max_profit": float(r[7]) if r[7] else 0,
+                    "score": float(r[8]) if r[8] else 0,
+                    "status": r[13],
+                }
+                for r in rows
+            ]
     except Exception as e:
         return [{"error": str(e)}]
 
 
 def get_orders() -> list[dict]:
     try:
-        return _client().get_open_orders()
+        c = _client()
+        if c is None:
+            return []
+        return c.get_open_orders()
     except Exception as e:
         return [{"error": str(e)}]
 
 
 def get_stats() -> dict:
     try:
-        client = _client()
-        positions = client.get_positions()
-        orders = client.get_open_orders()
-        account = client.get_account()
+        c = _client()
+        if c is None:
+            return {"error": "Alpaca keys not configured", "is_paper": settings.is_paper_mode()}
+        positions = c.get_positions()
+        orders = c.get_open_orders()
+        account = c.get_account()
         winners = sum(1 for p in positions if p["unrealized_pl"] > 0)
         losers = len(positions) - winners
         return {
@@ -158,22 +207,9 @@ def get_api_usage() -> dict:
 
 
 def get_logs(n: int = 100) -> list[str]:
-    path = _log_file()
-    if not path.exists():
-        return []
-    try:
-        with open(path, "rb") as f:
-            # Read from end for efficiency
-            f.seek(0, 2)
-            size = f.tell()
-            # Read last chunk (generous estimate)
-            chunk = min(size, n * 500)
-            f.seek(max(0, size - chunk))
-            text = f.read().decode("utf-8", errors="replace")
-        lines = text.splitlines()
-        return lines[-n:]
-    except Exception:
-        return []
+    """Read logs from DB."""
+    from src.db_logger import get_logs as db_get_logs
+    return db_get_logs(n)
 
 
 def _get_market_session() -> str:
@@ -203,6 +239,7 @@ def get_status() -> dict:
         "is_open": is_market_open(),
         "trading_mode": mode,
         "bot_running": _bot_running(),
+        "keys_configured": _keys_configured(),
         "current_time": now.strftime("%a %b %d %I:%M:%S %p ET"),
         "time_until_open": time_until_open(),
         "time_until_close": time_until_close(),
@@ -229,6 +266,58 @@ def get_news() -> dict:
         return {"articles": [], "sectors": [], "error": str(e)}
 
 
+_INDEX_SYMBOLS = ["SPY", "DIA", "IWM", "QQQ"]
+# SPY = S&P 500 Index
+# DIA = Dow Jones Industrial Average
+# IWM = Russell 2000 Index
+# QQQ = Nasdaq 100 Index
+# VIXY = CBOE Volatility Index (VIX) ETF
+_VIX_SYMBOL = "VIXY"  # VIX ETF (Alpaca doesn't support ^VIX directly)
+
+# Cache indices for 30s to avoid hammering API
+_indices_cache: dict | None = None
+_indices_cache_ts: float = 0
+
+
+def get_market_indices() -> list[dict]:
+    """Fetch snapshot quotes for major indices + volatility."""
+    import time
+    global _indices_cache, _indices_cache_ts
+
+    now = time.time()
+    if _indices_cache is not None and now - _indices_cache_ts < 30:
+        return _indices_cache
+
+    try:
+        client = _data_client_()
+        if client is None:
+            return []
+        symbols = _INDEX_SYMBOLS + [_VIX_SYMBOL]
+        req = StockSnapshotRequest(symbol_or_symbols=symbols)
+        snapshots = client.get_stock_snapshot(req)
+        result = []
+        for sym in symbols:
+            snap = snapshots.get(sym)
+            if not snap:
+                continue
+            price = snap.latest_trade.price if snap.latest_trade else 0
+            prev = snap.previous_daily_bar.close if snap.previous_daily_bar else 0
+            change = price - prev if prev else 0
+            change_pct = (change / prev * 100) if prev else 0
+            result.append({
+                "symbol": sym,
+                "price": round(price, 2),
+                "change": round(change, 2),
+                "change_pct": round(change_pct, 2),
+                "is_vix": sym == _VIX_SYMBOL,
+            })
+        _indices_cache = result
+        _indices_cache_ts = now
+        return result
+    except Exception as e:
+        return []
+
+
 def get_full_snapshot() -> dict:
     from datetime import datetime
     return {
@@ -243,5 +332,6 @@ def get_full_snapshot() -> dict:
         "status": get_status(),
         "history": get_trade_history_data(),
         "news": get_news(),
+        "market_indices": get_market_indices(),
         "timestamp": datetime.now().isoformat(),
     }

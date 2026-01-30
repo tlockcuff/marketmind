@@ -14,6 +14,7 @@ import { LogStream } from "@/components/log-stream";
 import { TargetPanel } from "@/components/target-panel";
 import { NewsPanel } from "@/components/news-panel";
 import { GridLayout } from "@/components/grid-layout";
+import { AccountMgmtPanel } from "@/components/account-mgmt-panel";
 
 export default function Dashboard() {
   const { data, connected } = useWebSocket();
@@ -30,13 +31,14 @@ export default function Dashboard() {
       "api-usage": <ApiUsagePanel usage={data?.api_usage ?? null} />,
       news: <NewsPanel news={data?.news ?? null} />,
       logs: <LogStream logs={data?.logs ?? null} />,
+      "account-mgmt": <AccountMgmtPanel />,
     }),
     [data],
   );
 
   return (
     <div className="h-screen flex flex-col overflow-hidden p-1 gap-1">
-      <Header status={data?.status ?? null} connected={connected} />
+      <Header status={data?.status ?? null} connected={connected} indices={data?.market_indices ?? []} />
       <div className="flex-1 min-h-0 overflow-y-auto">
         <GridLayout>{panels}</GridLayout>
       </div>

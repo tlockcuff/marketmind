@@ -15,21 +15,20 @@ function getLogLevel(line: string): string {
   return "text-foreground";
 }
 
-function to12h(time24: string): string {
+function formatTime(time24: string): string {
+  // Keep 24h format
   const match = time24.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?/);
   if (!match) return time24;
-  let h = parseInt(match[1], 10);
+  const h = match[1].padStart(2, "0");
   const m = match[2];
   const s = match[3];
-  const ampm = h >= 12 ? "PM" : "AM";
-  h = h % 12 || 12;
-  return s ? `${h}:${m}:${s} ${ampm}` : `${h}:${m} ${ampm}`;
+  return s ? `${h}:${m}:${s}` : `${h}:${m}`;
 }
 
 function parseLogLine(line: string): { time: string | null; message: string } {
   const parts = line.split("|", 3);
   if (parts.length >= 3) {
-    return { time: to12h(parts[0].trim()), message: parts[2].trim() };
+    return { time: formatTime(parts[0].trim()), message: parts[2].trim() };
   }
   return { time: null, message: line };
 }

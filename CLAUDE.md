@@ -107,15 +107,11 @@ Momentum Screener┘
 Required in `.env`:
 - `TRADING_MODE` - "paper" (default) or "live"
 - `GROK_API_KEY` - X.ai API key
-- `ALPACA_PAPER_API_KEY` / `ALPACA_PAPER_SECRET_KEY` - Paper trading
-- `ALPACA_LIVE_API_KEY` / `ALPACA_LIVE_SECRET_KEY` - Live trading (optional)
+- Alpaca keys are managed via the web dashboard Account Management panel (stored in DB)
 - `FINNHUB_API_KEY` - Finnhub API key for market news (optional)
 - `DISCORD_WEBHOOK_URL` - Optional alerts
+- `DATABASE_URL` - External PostgreSQL connection string (e.g. `postgresql://trader:trader@192.168.1.2:5556/daytrading`)
 
-## Data Files (`logs/`)
+## Database
 
-- `bot.lock` - PID lock file
-- `trade_history.json` - Open/closed trades with rationale
-- `api_usage.json` - Grok API cost tracking
-- `symbol_cache.json` - Cached company names
-- `trading.log` - Current session (TUI reads this)
+All persistent data lives in an external PostgreSQL instance (trades, rejected signals, API usage, symbol cache, options positions, daily stats, config overrides, daily target, congress cache, bot instances, logs). Schema auto-created at startup via `init_db()`. See `schema.sql` for table definitions.

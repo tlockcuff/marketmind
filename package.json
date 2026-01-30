@@ -2,9 +2,8 @@
   "name": "day-trading",
   "private": true,
   "scripts": {
-    "dev": "concurrently -n bot,api,web -c blue,green,yellow \"npm run dev:bot\" \"npm run dev:api\" \"npm run dev:web\"",
-    "dev:bot": "PYTHONPATH=. ./venv/bin/python src/main.py",
-    "dev:api": "PYTHONPATH=. ./venv/bin/uvicorn api.server:app --host 0.0.0.0 --port 8000 --reload",
+    "dev": "concurrently --kill-others -n api,web -c green,yellow \"npm run dev:api\" \"npm run dev:web\"",
+    "dev:api": "PYTHONPATH=. ./venv/bin/uvicorn api.server:app --host :: --port 8000 --reload",
     "dev:web": "cd web && npm run dev -- --port 5000",
     "prod:web": "cd web && npm install"
   },

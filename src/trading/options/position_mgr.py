@@ -1,33 +1,31 @@
-"""Options position tracking and exit management."""
+"""Options position tracking and exit management — PostgreSQL backend."""
 
 import json
 import logging
 import os
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, asdict
 from datetime import datetime
-from pathlib import Path
 from typing import List, Optional
 
 from config import settings
+from src.db import get_db
 from src.trading.options.contracts import OptionContract
 from src.trading.options.executor import OptionsExecutor
 
 logger = logging.getLogger(__name__)
 
 
-def _get_positions_file() -> Path:
-    mode = os.environ.get("TRADING_MODE", "paper").lower()
-    prefix = "live" if mode == "live" else "paper"
-    return Path(__file__).parent.parent.parent.parent / "logs" / f"{prefix}_options_positions.json"
+def _mode() -> str:
+    return "live" if os.environ.get("TRADING_MODE", "paper").lower() == "live" else "paper"
 
 
 @dataclass
 class OptionsPosition:
-    strategy: str          # "directional", "covered_call", "credit_spread"
+    strategy: str
     underlying: str
-    contracts: list        # list of contract symbol strings
+    contracts: list
     entry_time: str
-    net_debit_credit: float  # positive=debit, negative=credit
+    net_debit_credit: float
     max_loss: float
     max_profit: float
     score: float
@@ -41,45 +39,90 @@ class OptionsPosition:
 class OptionsPositionManager:
     def __init__(self, executor: OptionsExecutor):
         self.executor = executor
-        self.positions: dict[str, OptionsPosition] = {}  # key = primary contract symbol
-        self._file = _get_positions_file()
+        self.positions: dict[str, OptionsPosition] = {}
         self._load()
 
     def _load(self):
-        if self._file.exists():
-            try:
-                data = json.loads(self._file.read_text())
-                for key, val in data.get("positions", {}).items():
-                    self.positions[key] = OptionsPosition(**val)
-            except Exception:
-                pass
-
-    def _save(self):
+        mode = _mode()
         try:
-            self._file.parent.mkdir(exist_ok=True)
-            data = {
-                "positions": {k: asdict(v) for k, v in self.positions.items()},
-                "updated": datetime.now().isoformat(),
-            }
-            self._file.write_text(json.dumps(data, indent=2))
+            with get_db() as conn:
+                rows = conn.execute(
+                    """SELECT key, strategy, underlying, contracts, entry_time,
+                              net_debit_credit, max_loss, max_profit, score,
+                              profit_target_pct, stop_loss_pct, dte_exit,
+                              entry_underlying_price, status
+                       FROM options_positions
+                       WHERE mode = %s AND status = 'open'""",
+                    (mode,),
+                ).fetchall()
+                self.positions = {}
+                for r in rows:
+                    self.positions[r[0]] = OptionsPosition(
+                        strategy=r[1],
+                        underlying=r[2],
+                        contracts=r[3] or [],
+                        entry_time=r[4].isoformat() if r[4] else "",
+                        net_debit_credit=float(r[5]) if r[5] else 0,
+                        max_loss=float(r[6]) if r[6] else 0,
+                        max_profit=float(r[7]) if r[7] else 0,
+                        score=float(r[8]) if r[8] else 0,
+                        profit_target_pct=float(r[9]) if r[9] else 0,
+                        stop_loss_pct=float(r[10]) if r[10] else 0,
+                        dte_exit=r[11] or 2,
+                        entry_underlying_price=float(r[12]) if r[12] else 0,
+                        status=r[13] or "open",
+                    )
         except Exception as e:
-            logger.warning(f"Failed to save options positions: {e}")
+            logger.warning(f"Failed to load options positions from DB: {e}")
+
+    def _db_insert(self, key: str, pos: OptionsPosition):
+        mode = _mode()
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    """INSERT INTO options_positions
+                       (mode, key, strategy, underlying, contracts, entry_time,
+                        net_debit_credit, max_loss, max_profit, score,
+                        profit_target_pct, stop_loss_pct, dte_exit,
+                        entry_underlying_price, status)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, 'open')""",
+                    (mode, key, pos.strategy, pos.underlying,
+                     json.dumps(pos.contracts), pos.entry_time,
+                     pos.net_debit_credit, pos.max_loss, pos.max_profit,
+                     pos.score, pos.profit_target_pct, pos.stop_loss_pct,
+                     pos.dte_exit, pos.entry_underlying_price),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to save options position: {e}")
+
+    def _db_update_status(self, key: str, status: str):
+        mode = _mode()
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    """UPDATE options_positions SET status = %s, updated_at = NOW()
+                       WHERE mode = %s AND key = %s AND status = 'open'""",
+                    (status, mode, key),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to update options position status: {e}")
 
     def can_open(self) -> bool:
         open_count = sum(1 for p in self.positions.values() if p.status == "open")
-        return open_count < settings.OPTIONS_MAX_CONCURRENT
+        return open_count < settings.get("options_max_concurrent")
 
     def open_directional(
         self, contract: OptionContract, qty: int, score: float, underlying_price: float
     ) -> bool:
-        """Open a directional options position."""
         if not self.can_open():
             logger.warning("Max options positions reached")
             return False
 
         limit_price = contract.mid or contract.ask or 0
         if limit_price <= 0:
-            logger.warning(f"No price for {contract.symbol} (bid={contract.bid}, ask={contract.ask})")
+            logger.warning(f"No price for {contract.symbol}")
             return False
 
         result = self.executor.buy_option(contract.symbol, qty, limit_price)
@@ -88,28 +131,28 @@ class OptionsPositionManager:
             return False
 
         cost = limit_price * qty * 100
-        self.positions[contract.symbol] = OptionsPosition(
+        pos = OptionsPosition(
             strategy="directional",
             underlying=contract.underlying,
             contracts=[contract.symbol],
             entry_time=datetime.now().isoformat(),
             net_debit_credit=cost,
             max_loss=cost,
-            max_profit=cost * 3,  # theoretical
+            max_profit=cost * 3,
             score=score,
-            profit_target_pct=settings.OPTIONS_PROFIT_TARGET_DIRECTIONAL,
-            stop_loss_pct=settings.OPTIONS_STOP_LOSS_DIRECTIONAL,
-            dte_exit=settings.OPTIONS_DTE_EXIT,
+            profit_target_pct=settings.get("options_profit_target_directional"),
+            stop_loss_pct=settings.get("options_stop_loss_directional"),
+            dte_exit=settings.get("options_dte_exit"),
             entry_underlying_price=underlying_price,
         )
-        self._save()
+        self.positions[contract.symbol] = pos
+        self._db_insert(contract.symbol, pos)
         logger.info(f"Opened directional: {contract.symbol}, {qty}x @ ${limit_price:.2f}")
         return True
 
     def open_covered_call(
         self, contract: OptionContract, qty: int, underlying_price: float
     ) -> bool:
-        """Open a covered call position."""
         if not self.can_open():
             return False
 
@@ -122,21 +165,22 @@ class OptionsPositionManager:
             return False
 
         premium = limit_price * qty * 100
-        self.positions[contract.symbol] = OptionsPosition(
+        pos = OptionsPosition(
             strategy="covered_call",
             underlying=contract.underlying,
             contracts=[contract.symbol],
             entry_time=datetime.now().isoformat(),
-            net_debit_credit=-premium,  # credit received
-            max_loss=0,  # covered by shares
+            net_debit_credit=-premium,
+            max_loss=0,
             max_profit=premium,
             score=0,
-            profit_target_pct=0.80,  # let most decay
+            profit_target_pct=0.80,
             stop_loss_pct=0,
-            dte_exit=settings.OPTIONS_DTE_EXIT,
+            dte_exit=settings.get("options_dte_exit"),
             entry_underlying_price=underlying_price,
         )
-        self._save()
+        self.positions[contract.symbol] = pos
+        self._db_insert(contract.symbol, pos)
         logger.info(f"Opened covered call: {contract.symbol}, {qty}x @ ${limit_price:.2f}")
         return True
 
@@ -147,7 +191,6 @@ class OptionsPositionManager:
         qty: int,
         score: float,
     ) -> bool:
-        """Open a credit spread."""
         if not self.can_open():
             return False
 
@@ -168,7 +211,7 @@ class OptionsPositionManager:
         max_loss = (width - credit) * qty * 100
 
         key = short_contract.symbol
-        self.positions[key] = OptionsPosition(
+        pos = OptionsPosition(
             strategy="credit_spread",
             underlying=short_contract.underlying,
             contracts=[short_contract.symbol, long_contract.symbol],
@@ -177,12 +220,13 @@ class OptionsPositionManager:
             max_loss=max_loss,
             max_profit=net_credit,
             score=score,
-            profit_target_pct=settings.OPTIONS_PROFIT_TARGET_SPREAD,
-            stop_loss_pct=2.0,  # close if loss > 2x credit
-            dte_exit=settings.OPTIONS_DTE_EXIT,
+            profit_target_pct=settings.get("options_profit_target_spread"),
+            stop_loss_pct=2.0,
+            dte_exit=settings.get("options_dte_exit"),
             entry_underlying_price=short_contract.strike,
         )
-        self._save()
+        self.positions[key] = pos
+        self._db_insert(key, pos)
         logger.info(
             f"Opened spread: {short_contract.symbol}/{long_contract.symbol}, "
             f"{qty}x, credit=${credit:.2f}"
@@ -190,7 +234,6 @@ class OptionsPositionManager:
         return True
 
     def check_exits(self, get_option_price_fn) -> List[str]:
-        """Check all option positions for exit triggers. Returns closed keys."""
         closed = []
         now = datetime.now()
 
@@ -201,13 +244,10 @@ class OptionsPositionManager:
             should_close = False
             reason = ""
 
-            # Check DTE
             entry_dt = datetime.fromisoformat(pos.entry_time)
-            # Rough DTE check: if held > 5 days for directional
             held_days = (now - entry_dt).days
 
             if pos.strategy == "directional":
-                # Get current option price
                 current_price = get_option_price_fn(pos.contracts[0])
                 if current_price is not None:
                     entry_cost_per = pos.net_debit_credit / (100 * max(1, len(pos.contracts)))
@@ -225,14 +265,11 @@ class OptionsPositionManager:
                     reason = f"max_hold_{held_days}d"
 
             elif pos.strategy == "credit_spread":
-                # Check if we've captured enough profit
-                # Would need current spread price; approximate via held time
                 if held_days >= 20:
                     should_close = True
                     reason = "dte_expiry_approaching"
 
             elif pos.strategy == "covered_call":
-                # Check if underlying dropped below entry
                 current_underlying = get_option_price_fn(pos.underlying)
                 if current_underlying and current_underlying < pos.entry_underlying_price * 0.97:
                     should_close = True
@@ -246,7 +283,6 @@ class OptionsPositionManager:
         return closed
 
     def _close_position(self, key: str, reason: str) -> bool:
-        """Close an options position. Returns True if closed or already gone."""
         pos = self.positions.get(key)
         if not pos:
             return False
@@ -264,21 +300,19 @@ class OptionsPositionManager:
 
         if all_ok:
             pos.status = f"closed_{reason}"
-            self._save()
+            self._db_update_status(key, pos.status)
         else:
             logger.warning(f"Close failed for {key}, keeping status=open for retry")
 
         return all_ok
 
     def has_covered_call(self, underlying: str) -> bool:
-        """Check if we already have a covered call on this underlying."""
         return any(
             p.strategy == "covered_call" and p.underlying == underlying and p.status == "open"
             for p in self.positions.values()
         )
 
     def get_options_summary(self) -> List[dict]:
-        """Get summary of open options positions."""
         results = []
         for key, pos in self.positions.items():
             if pos.status != "open":

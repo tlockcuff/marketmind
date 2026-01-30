@@ -17,7 +17,10 @@ function Row({ label, value, className = "" }: { label: string; value: string; c
 }
 
 function formatMoney(n: number) {
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
+  if (!n || n === 0) {
+    return "$0";
+  }
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 });
 }
 
 export function AccountPanel({ account }: Props) {
@@ -44,7 +47,7 @@ export function AccountPanel({ account }: Props) {
         <Row label="Prev Close" value={formatMoney(account.last_equity)} />
         <Row
           label="Daily P/L"
-          value={`${formatMoney(account.daily_change)} (${account.daily_change_pct >= 0 ? "+" : ""}${account.daily_change_pct.toFixed(2)}%)`}
+          value={`${formatMoney(account.daily_change)} (${account.daily_change_pct >= 0 ? "+" : ""}${account.daily_change_pct?.toFixed(2)}%)`}
           className={`font-bold ${plColor}`}
         />
         <div className="my-1.5 border-t border-border" />

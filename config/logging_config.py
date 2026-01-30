@@ -75,6 +75,17 @@ def setup_logging(level=logging.INFO, log_file=None):
     ))
     root.addHandler(main_handler)
 
+    # PostgreSQL log handler (alongside file handlers)
+    try:
+        from src.db_logger import PostgresHandler
+        pg_handler = PostgresHandler(level=level)
+        pg_handler.setFormatter(logging.Formatter(
+            "%(message)s"  # Just message, logger_name stored separately
+        ))
+        root.addHandler(pg_handler)
+    except Exception:
+        pass  # DB not available yet, file handlers are the fallback
+
     # Quiet noisy libs
     logging.getLogger("urllib3").setLevel(logging.WARNING)
     logging.getLogger("httpx").setLevel(logging.WARNING)

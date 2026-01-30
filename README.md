@@ -83,7 +83,16 @@ Then open [http://localhost:5000](http://localhost:5000) in your browser.
 ```bash
 docker compose up -d
 ```
-Runs all three services (bot, API on :8000, web on :5000) in containers with auto-restart.
+Runs bot, API (:8000), and web (:5000) in containers with auto-restart. Requires an external PostgreSQL instance — set `DATABASE_URL` in `.env`.
+
+### PostgreSQL
+
+All trade history, API usage, config overrides, and logs are stored in an external PostgreSQL database. Schema is auto-created on first startup via `init_db()`.
+
+Set the connection string in `.env`:
+```
+DATABASE_URL=postgresql://trader:trader@your-db-host:5432/daytrading
+```
 
 ---
 
@@ -94,19 +103,11 @@ Runs all three services (bot, API on :8000, web on :5000) in containers with aut
 1. Sign up at [alpaca.markets](https://alpaca.markets)
 2. From the dashboard, go to **Paper Trading**
 3. Click **View** under API Keys, then **Generate New Key**
-4. Paste both values into your `.env`:
+4. Enter your keys in the **Account Management** panel in the web dashboard
 
-```
-ALPACA_PAPER_API_KEY=PKxxxxxxxxxxxxxxxx
-ALPACA_PAPER_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+Keys are stored in the database and can be updated on the fly from the web UI. When you reset your paper account on Alpaca (which gives you new keys), just paste them into the dashboard and it will wipe all trading data automatically.
 
-**Going live (optional):** Complete Alpaca's brokerage application, get approved, fund your account, then generate live API keys under **Live Trading** and add them:
-
-```
-ALPACA_LIVE_API_KEY=AKxxxxxxxxxxxxxxxx
-ALPACA_LIVE_SECRET_KEY=xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-```
+**Going live (optional):** Complete Alpaca's brokerage application, get approved, fund your account, then generate live API keys under **Live Trading** and enter them via the dashboard.
 
 > ⚠️ Accounts under $25k are subject to the Pattern Day Trader rule (3 day trades per 5 rolling days). Marketmind tracks and enforces this automatically so you don't get flagged.
 

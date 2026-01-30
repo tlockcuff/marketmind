@@ -5,15 +5,29 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
-/** Derive API base URL from current browser host */
-export function getApiUrl(): string {
+/**
+ * Local dev: API on :8000, web on :3000/5000 — connect directly to :8000
+ * Production (nginx): same origin proxies everything
+ */
+function getApiBase(): string {
   if (typeof window === "undefined") return "http://localhost:8000";
+  // Empty port means nginx/prod is in front — use same origin
+  if (window.location.port === "") return "";
+  // Local dev — API is on :8000
   return `${window.location.protocol}//${window.location.hostname}:8000`;
 }
 
-/** Derive WebSocket URL from current browser host */
+export function getApiUrl(): string {
+  return getApiBase();
+}
+
 export function getWsUrl(): string {
-  if (typeof window === "undefined") return "ws://localhost:8000/ws";
+  if (typeof window === "undefined") return "ws://127.0.0.1:8000/ws";
   const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
-  return `${proto}//${window.location.hostname}:8000/ws`;
+  // Empty port means nginx/prod is in front — use same origin
+  if (window.location.port === "") {
+    return `${proto}//${window.location.host}/ws`;
+  }
+  // Local dev — API is on :8000 (use 127.0.0.1 to avoid IPv6 issues)
+  return `${proto}//127.0.0.1:8000/ws`;
 }

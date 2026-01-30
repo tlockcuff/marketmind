@@ -57,8 +57,8 @@ class ContractSelector:
 
         contracts = self._get_chain(
             underlying, option_type,
-            dte_min=settings.OPTIONS_DTE_MIN,
-            dte_max=settings.OPTIONS_DTE_MAX,
+            dte_min=settings.get("options_dte_min"),
+            dte_max=settings.get("options_dte_max"),
         )
         if not contracts:
             return None
@@ -66,11 +66,11 @@ class ContractSelector:
         # Filter: OI, spread (skip if unknown), delta (skip if unknown)
         candidates = []
         for c in contracts:
-            if c.open_interest < settings.OPTIONS_MIN_OPEN_INTEREST:
+            if c.open_interest < settings.get("options_min_open_interest"):
                 continue
             # Only filter spread if we have quote data
             if c.bid is not None and c.ask is not None:
-                if c.spread_pct > settings.OPTIONS_MAX_SPREAD_PCT:
+                if c.spread_pct > settings.get("options_max_spread_pct"):
                     continue
             if c.delta is not None:
                 abs_delta = abs(c.delta)
@@ -104,7 +104,7 @@ class ContractSelector:
         # For puts: strike slightly below price (ATM to 5% OTM)
         candidates = []
         for c in contracts:
-            if c.open_interest < settings.OPTIONS_MIN_OPEN_INTEREST:
+            if c.open_interest < settings.get("options_min_open_interest"):
                 continue
             moneyness = (c.strike - price) / price
             if option_type == "call":
@@ -127,12 +127,12 @@ class ContractSelector:
         contracts = self._get_chain(
             underlying, "call",
             dte_min=14,
-            dte_max=settings.OPTIONS_DTE_MAX_SPREAD,
+            dte_max=settings.get("options_dte_max_spread"),
         )
         if not contracts:
             return None
 
-        delta_min, delta_max = settings.OPTIONS_CC_DELTA_RANGE
+        delta_min, delta_max = settings.get("options_cc_delta_range")
         otm_min = price * 1.03
         otm_max = price * 1.08
 
@@ -140,17 +140,17 @@ class ContractSelector:
         for c in contracts:
             if c.strike < otm_min or c.strike > otm_max:
                 continue
-            if c.open_interest < settings.OPTIONS_MIN_OPEN_INTEREST:
+            if c.open_interest < settings.get("options_min_open_interest"):
                 continue
             if c.bid is not None and c.ask is not None:
-                if c.spread_pct > settings.OPTIONS_MAX_SPREAD_PCT:
+                if c.spread_pct > settings.get("options_max_spread_pct"):
                     continue
             if c.delta is not None:
                 abs_delta = abs(c.delta)
                 if abs_delta < delta_min or abs_delta > delta_max:
                     continue
             # Check minimum premium only if we have quote data
-            if c.mid and c.mid / price < settings.COVERED_CALL_MIN_PREMIUM_PCT:
+            if c.mid and c.mid / price < settings.get("covered_call_min_premium_pct"):
                 continue
             candidates.append(c)
 
@@ -181,7 +181,7 @@ class ContractSelector:
         contracts = self._get_chain(
             underlying, option_type,
             dte_min=14,
-            dte_max=settings.OPTIONS_DTE_MAX_SPREAD,
+            dte_max=settings.get("options_dte_max_spread"),
         )
         if not contracts:
             return None
@@ -189,10 +189,10 @@ class ContractSelector:
         # Find short leg: delta 0.25-0.35, or by strike if no greeks
         short_candidates = []
         for c in contracts:
-            if c.open_interest < settings.OPTIONS_MIN_OPEN_INTEREST:
+            if c.open_interest < settings.get("options_min_open_interest"):
                 continue
             if c.bid is not None and c.ask is not None:
-                if c.spread_pct > settings.OPTIONS_MAX_SPREAD_PCT:
+                if c.spread_pct > settings.get("options_max_spread_pct"):
                     continue
             if c.delta is not None:
                 abs_delta = abs(c.delta)

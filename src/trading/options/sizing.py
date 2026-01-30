@@ -16,7 +16,7 @@ class OptionsSizer:
         if contract_price <= 0:
             return 0
 
-        max_loss = self.equity * settings.OPTIONS_MAX_POSITION_PCT
+        max_loss = self.equity * settings.get("options_max_position_pct")
         # Each contract = 100 shares, cost = contract_price * 100
         cost_per_contract = contract_price * 100
         max_contracts = int(max_loss / cost_per_contract)

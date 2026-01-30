@@ -12,13 +12,51 @@ TRADING_MODE = os.getenv("TRADING_MODE", "paper").lower()
 GROK_API_KEY = os.getenv("GROK_API_KEY")
 GROK_BASE_URL = os.getenv("GROK_BASE_URL", "https://api.x.ai/v1")
 
-# API Keys - Alpaca (separate keys for paper/live)
+# API Keys - Alpaca
+# Env vars are fallback; primary source is the alpaca_keys DB table (managed via web UI)
 ALPACA_PAPER_API_KEY = os.getenv("ALPACA_PAPER_API_KEY", os.getenv("ALPACA_API_KEY"))
 ALPACA_PAPER_SECRET_KEY = os.getenv("ALPACA_PAPER_SECRET_KEY", os.getenv("ALPACA_SECRET_KEY"))
 ALPACA_LIVE_API_KEY = os.getenv("ALPACA_LIVE_API_KEY")
 ALPACA_LIVE_SECRET_KEY = os.getenv("ALPACA_LIVE_SECRET_KEY")
 
-# Select active keys based on mode
+def _load_alpaca_keys_from_db():
+    """Load Alpaca keys from DB. Returns (api_key, secret_key) or (None, None)."""
+    try:
+        from src.db import get_db
+        with get_db() as conn:
+            row = conn.execute("SELECT api_key, secret_key FROM alpaca_keys WHERE id = 1").fetchone()
+            if row:
+                return row[0], row[1]
+    except Exception:
+        pass
+    return None, None
+
+def _resolve_alpaca_keys():
+    """Resolve Alpaca keys: DB first, then env vars."""
+    global ALPACA_API_KEY, ALPACA_SECRET_KEY, ALPACA_BASE_URL
+    global ALPACA_PAPER_API_KEY, ALPACA_PAPER_SECRET_KEY
+    global ALPACA_LIVE_API_KEY, ALPACA_LIVE_SECRET_KEY
+
+    db_api, db_secret = _load_alpaca_keys_from_db()
+    if db_api and db_secret:
+        ALPACA_API_KEY = db_api
+        ALPACA_SECRET_KEY = db_secret
+        if TRADING_MODE == "live":
+            ALPACA_LIVE_API_KEY = db_api
+            ALPACA_LIVE_SECRET_KEY = db_secret
+        else:
+            ALPACA_PAPER_API_KEY = db_api
+            ALPACA_PAPER_SECRET_KEY = db_secret
+    elif TRADING_MODE == "live":
+        ALPACA_API_KEY = ALPACA_LIVE_API_KEY
+        ALPACA_SECRET_KEY = ALPACA_LIVE_SECRET_KEY
+    else:
+        ALPACA_API_KEY = ALPACA_PAPER_API_KEY
+        ALPACA_SECRET_KEY = ALPACA_PAPER_SECRET_KEY
+
+    ALPACA_BASE_URL = "https://api.alpaca.markets" if TRADING_MODE == "live" else "https://paper-api.alpaca.markets"
+
+# Select active keys based on mode (env fallback)
 if TRADING_MODE == "live":
     ALPACA_API_KEY = ALPACA_LIVE_API_KEY
     ALPACA_SECRET_KEY = ALPACA_LIVE_SECRET_KEY
@@ -27,6 +65,9 @@ else:
     ALPACA_API_KEY = ALPACA_PAPER_API_KEY
     ALPACA_SECRET_KEY = ALPACA_PAPER_SECRET_KEY
     ALPACA_BASE_URL = "https://paper-api.alpaca.markets"
+
+# Try loading from DB (may fail on first run before init_db)
+_resolve_alpaca_keys()
 
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
@@ -104,25 +145,32 @@ CONGRESS_LOOKBACK_DAYS = 30 # 30 days lookback
 
 # Daily P/L target (set via env, CLI --target, or web API)
 DAILY_TARGET = float(os.getenv("DAILY_TARGET", "0")) or None  # e.g. 1000 = $1000 target
-_DAILY_TARGET_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "daily_target.json")
 
 def get_daily_target() -> Optional[float]:
-    """Get daily target from file (web API updates) or settings."""
-    import json
+    """Get daily target from DB or settings."""
     try:
-        with open(_DAILY_TARGET_FILE) as f:
-            data = json.load(f)
-            return data.get("target")
-    except (FileNotFoundError, json.JSONDecodeError, KeyError):
+        from src.db import get_db
+        with get_db() as conn:
+            row = conn.execute("SELECT target FROM daily_target WHERE id = 1").fetchone()
+            if row and row[0] is not None:
+                return float(row[0])
+    except Exception:
         pass
     return DAILY_TARGET
 
 def set_daily_target(target: Optional[float]):
-    """Persist daily target to shared file."""
-    import json
-    os.makedirs(os.path.dirname(_DAILY_TARGET_FILE), exist_ok=True)
-    with open(_DAILY_TARGET_FILE, "w") as f:
-        json.dump({"target": target}, f)
+    """Persist daily target to DB."""
+    try:
+        from src.db import get_db
+        with get_db() as conn:
+            conn.execute(
+                """INSERT INTO daily_target (id, target) VALUES (1, %s)
+                   ON CONFLICT (id) DO UPDATE SET target = EXCLUDED.target""",
+                (target,),
+            )
+            conn.commit()
+    except Exception:
+        pass
 
 def is_paper_mode() -> bool:
     return TRADING_MODE == "paper"
@@ -133,8 +181,6 @@ def is_live_mode() -> bool:
 # ---------------------------------------------------------------------------
 # Live-editable config override system
 # ---------------------------------------------------------------------------
-
-_CONFIG_OVERRIDES_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), "logs", "config_overrides.json")
 
 EDITABLE_SETTINGS = {
     # Risk
@@ -167,43 +213,65 @@ EDITABLE_SETTINGS = {
     "recovery_buying_power_pct": {"type": "float", "min": 0.01, "max": 0.5,  "label": "Recovery BP %",           "section": "Recovery"},
     "recovery_buying_power_min": {"type": "float", "min": 100,  "max": 100000,"label": "Recovery BP Min $",      "section": "Recovery"},
     "recovery_cooldown_minutes": {"type": "int",   "min": 0,    "max": 60,   "label": "Recovery Cooldown (min)", "section": "Recovery"},
+    # Data Sources
+    "congress_enabled":          {"type": "bool",                             "label": "Congress Trading",        "section": "Data Sources"},
 }
 
 
 def get_config_overrides() -> dict:
-    """Read overrides from file."""
+    """Read overrides from DB."""
     try:
-        with open(_CONFIG_OVERRIDES_FILE) as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
+        from src.db import get_db
+        with get_db() as conn:
+            rows = conn.execute("SELECT key, value FROM config_overrides").fetchall()
+            result = {}
+            for r in rows:
+                val = r[1]
+                # JSONB wraps scalars, unwrap them
+                if isinstance(val, dict) and "__val__" in val:
+                    result[r[0]] = val["__val__"]
+                else:
+                    result[r[0]] = val
+            return result
+    except Exception:
         return {}
 
 
 def set_config_overrides(overrides: dict):
-    """Write overrides to file. Merges with existing."""
-    current = get_config_overrides()
-    current.update(overrides)
-    # Remove keys set to None (reset)
-    current = {k: v for k, v in current.items() if v is not None}
-    os.makedirs(os.path.dirname(_CONFIG_OVERRIDES_FILE), exist_ok=True)
-    with open(_CONFIG_OVERRIDES_FILE, "w") as f:
-        json.dump(current, f, indent=2)
+    """Write overrides to DB. Merges with existing."""
+    try:
+        from src.db import get_db
+        with get_db() as conn:
+            for key, value in overrides.items():
+                if value is None:
+                    conn.execute("DELETE FROM config_overrides WHERE key = %s", (key,))
+                else:
+                    # Wrap non-dict values for JSONB storage
+                    json_val = json.dumps({"__val__": value})
+                    conn.execute(
+                        """INSERT INTO config_overrides (key, value)
+                           VALUES (%s, %s::jsonb)
+                           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value""",
+                        (key, json_val),
+                    )
+            conn.commit()
+    except Exception:
+        pass
 
 
 def clear_config_overrides(keys: Optional[list] = None):
     """Clear all overrides or specific keys."""
-    if keys is None:
-        try:
-            os.remove(_CONFIG_OVERRIDES_FILE)
-        except FileNotFoundError:
-            pass
-    else:
-        current = get_config_overrides()
-        for k in keys:
-            current.pop(k, None)
-        os.makedirs(os.path.dirname(_CONFIG_OVERRIDES_FILE), exist_ok=True)
-        with open(_CONFIG_OVERRIDES_FILE, "w") as f:
-            json.dump(current, f, indent=2)
+    try:
+        from src.db import get_db
+        with get_db() as conn:
+            if keys is None:
+                conn.execute("DELETE FROM config_overrides")
+            else:
+                for k in keys:
+                    conn.execute("DELETE FROM config_overrides WHERE key = %s", (k,))
+            conn.commit()
+    except Exception:
+        pass
 
 
 def get(key: str) -> Any:

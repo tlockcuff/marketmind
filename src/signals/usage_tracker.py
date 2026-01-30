@@ -1,13 +1,11 @@
-import json
 import logging
 from datetime import datetime, date
-from pathlib import Path
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field
 from typing import Optional
 
-logger = logging.getLogger(__name__)
+from src.db import get_db
 
-USAGE_FILE = Path(__file__).parent.parent.parent / "logs" / "api_usage.json"
+logger = logging.getLogger(__name__)
 
 # Grok pricing (per 1M tokens) - sourced from models.dev Jan 2026
 GROK_PRICING = {
@@ -41,44 +39,11 @@ class DailyUsage:
 
 @dataclass
 class UsageTracker:
-    daily: dict = field(default_factory=dict)
     total_cost: float = 0.0
     total_requests: int = 0
 
     def __post_init__(self):
-        self._load()
-
-    def _load(self):
-        """Load usage data from file."""
-        if USAGE_FILE.exists():
-            try:
-                data = json.loads(USAGE_FILE.read_text())
-                self.daily = data.get("daily", {})
-                self.total_cost = data.get("total_cost", 0.0)
-                self.total_requests = data.get("total_requests", 0)
-            except Exception as e:
-                logger.warning(f"Failed to load usage data: {e}")
-
-    def _save(self):
-        """Save usage data to file."""
-        try:
-            USAGE_FILE.parent.mkdir(exist_ok=True)
-            data = {
-                "daily": self.daily,
-                "total_cost": self.total_cost,
-                "total_requests": self.total_requests,
-                "last_updated": datetime.now().isoformat(),
-            }
-            USAGE_FILE.write_text(json.dumps(data, indent=2))
-        except Exception as e:
-            logger.warning(f"Failed to save usage data: {e}")
-
-    def _get_today(self) -> DailyUsage:
-        """Get or create today's usage record."""
-        today = str(date.today())
-        if today not in self.daily:
-            self.daily[today] = asdict(DailyUsage(date=today))
-        return self.daily[today]
+        pass  # DB is always fresh, no load needed
 
     def record_request(
         self,
@@ -92,48 +57,79 @@ class UsageTracker:
         cost = (input_tokens * pricing["input"] / 1_000_000) + \
                (output_tokens * pricing["output"] / 1_000_000)
 
-        today = self._get_today()
-        today["requests"] += 1
-        today["input_tokens"] += input_tokens
-        today["output_tokens"] += output_tokens
-        today["total_cost"] += cost
-        today["signals_generated"] += signals_count
-
-        self.total_cost += cost
-        self.total_requests += 1
+        today = str(date.today())
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    """INSERT INTO api_usage (date, requests, input_tokens, output_tokens,
+                                             total_cost, signals_generated)
+                       VALUES (%s, 1, %s, %s, %s, %s)
+                       ON CONFLICT (date) DO UPDATE SET
+                           requests = api_usage.requests + 1,
+                           input_tokens = api_usage.input_tokens + EXCLUDED.input_tokens,
+                           output_tokens = api_usage.output_tokens + EXCLUDED.output_tokens,
+                           total_cost = api_usage.total_cost + EXCLUDED.total_cost,
+                           signals_generated = api_usage.signals_generated + EXCLUDED.signals_generated""",
+                    (today, input_tokens, output_tokens, cost, signals_count),
+                )
+                conn.commit()
+        except Exception as e:
+            logger.warning(f"Failed to record API usage: {e}")
 
         logger.info(
-            f"API usage: {input_tokens} in, {output_tokens} out, "
-            f"${cost:.4f} (today: ${today['total_cost']:.4f}, total: ${self.total_cost:.4f})"
+            f"API usage: {input_tokens} in, {output_tokens} out, ${cost:.4f}"
         )
 
-        self._save()
-
     def reload(self):
-        """Reload usage data from disk (for dashboard cross-process reads)."""
-        self._load()
+        """No-op — DB is always fresh."""
+        pass
 
     def get_today_summary(self) -> dict:
         """Get today's usage summary."""
-        self.reload()
-        today = self._get_today()
+        today = str(date.today())
+        try:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT requests, input_tokens, output_tokens, total_cost, signals_generated "
+                    "FROM api_usage WHERE date = %s",
+                    (today,),
+                ).fetchone()
+                if row:
+                    return {
+                        "date": today,
+                        "requests": row[0],
+                        "input_tokens": row[1],
+                        "output_tokens": row[2],
+                        "cost": round(float(row[3]), 4),
+                        "signals": row[4],
+                    }
+        except Exception as e:
+            logger.warning(f"Failed to get today summary: {e}")
         return {
-            "date": today["date"],
-            "requests": today["requests"],
-            "input_tokens": today["input_tokens"],
-            "output_tokens": today["output_tokens"],
-            "cost": round(today["total_cost"], 4),
-            "signals": today["signals_generated"],
+            "date": today,
+            "requests": 0,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost": 0.0,
+            "signals": 0,
         }
 
     def get_total_summary(self) -> dict:
         """Get all-time usage summary."""
-        self.reload()
-        return {
-            "total_requests": self.total_requests,
-            "total_cost": round(self.total_cost, 4),
-            "days_tracked": len(self.daily),
-        }
+        try:
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT COALESCE(SUM(requests), 0), COALESCE(SUM(total_cost), 0), COUNT(*) "
+                    "FROM api_usage"
+                ).fetchone()
+                return {
+                    "total_requests": row[0],
+                    "total_cost": round(float(row[1]), 4),
+                    "days_tracked": row[2],
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get total summary: {e}")
+            return {"total_requests": 0, "total_cost": 0.0, "days_tracked": 0}
 
 
 # Global tracker instance

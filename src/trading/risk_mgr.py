@@ -1,16 +1,13 @@
-import json
 import logging
-import os
 from datetime import datetime, date
 from typing import Optional
 from dataclasses import dataclass, field
 
 from config import settings
 from src.trading.alpaca_client import AlpacaClient
+from src.db import get_db
 
 logger = logging.getLogger(__name__)
-
-_DAILY_STATS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "logs", "daily_stats.json")
 
 
 @dataclass
@@ -40,17 +37,20 @@ class RiskManager:
         today = date.today()
         if self.daily_stats is None or self.daily_stats.date != today:
             account = self.alpaca.get_account()
-            equity = account.get("equity", settings.PAPER_PORTFOLIO_SIZE)
+            equity = account.get("equity", settings.get("paper_portfolio_size"))
 
-            # Try to restore today's starting_equity from disk
+            # Try to restore today's starting_equity from DB
             starting_equity = equity
             try:
-                with open(_DAILY_STATS_FILE) as f:
-                    saved = json.load(f)
-                if saved.get("date") == str(today):
-                    starting_equity = saved["starting_equity"]
-                    logger.info(f"Restored starting_equity=${starting_equity:,.0f} from disk")
-            except (FileNotFoundError, json.JSONDecodeError, KeyError):
+                with get_db() as conn:
+                    row = conn.execute(
+                        "SELECT starting_equity FROM daily_stats WHERE date = %s",
+                        (today,),
+                    ).fetchone()
+                    if row:
+                        starting_equity = float(row[0])
+                        logger.info(f"Restored starting_equity=${starting_equity:,.0f} from DB")
+            except Exception:
                 pass
 
             # New day or first run — persist starting_equity
@@ -68,9 +68,14 @@ class RiskManager:
     def _save_daily_stats(self, day: date, starting_equity: float):
         """Persist starting_equity so it survives restarts."""
         try:
-            os.makedirs(os.path.dirname(_DAILY_STATS_FILE), exist_ok=True)
-            with open(_DAILY_STATS_FILE, "w") as f:
-                json.dump({"date": str(day), "starting_equity": starting_equity}, f)
+            with get_db() as conn:
+                conn.execute(
+                    """INSERT INTO daily_stats (date, starting_equity)
+                       VALUES (%s, %s)
+                       ON CONFLICT (date) DO UPDATE SET starting_equity = EXCLUDED.starting_equity""",
+                    (day, starting_equity),
+                )
+                conn.commit()
         except Exception as e:
             logger.warning(f"Failed to save daily stats: {e}")
 
@@ -95,7 +100,7 @@ class RiskManager:
         daily_pnl = current_equity - self.daily_stats.starting_equity
         daily_loss_pct = abs(daily_pnl) / self.daily_stats.starting_equity if daily_pnl < 0 else 0
 
-        if daily_loss_pct >= settings.DAILY_LOSS_LIMIT_PCT:
+        if daily_loss_pct >= settings.get("daily_loss_limit_pct"):
             self.trading_halted = True
             self.halt_reason = f"Daily loss limit hit: {daily_loss_pct:.1%}"
             logger.warning(self.halt_reason)
@@ -131,7 +136,7 @@ class RiskManager:
             stop_distance = atr * 2
         else:
             # Percentage-based stop
-            stop_distance = entry_price * settings.STOP_LOSS_PCT
+            stop_distance = entry_price * settings.get("stop_loss_pct")
 
         if direction in ("buy", "long"):
             return round(entry_price - stop_distance, 2)
@@ -152,7 +157,7 @@ class RiskManager:
             reward = risk * risk_reward
         else:
             # Percentage-based
-            reward = entry_price * settings.TAKE_PROFIT_PCT
+            reward = entry_price * settings.get("take_profit_pct")
 
         if direction in ("buy", "long"):
             return round(entry_price + reward, 2)
@@ -223,7 +228,7 @@ class RiskManager:
 
         position_value = qty * price
         equity = account.get("equity", 0)
-        max_position = equity * settings.MAX_POSITION_PCT
+        max_position = equity * settings.get("max_position_pct")
 
         if position_value > max_position:
             adjusted_qty = int(max_position / price)
@@ -251,13 +256,13 @@ class RiskManager:
         day_trades_remaining = account.get("day_trades_remaining", 0)
 
         # Check if we have day trades available (minus reserve)
-        usable_day_trades = day_trades_remaining - settings.RESERVE_DAY_TRADES
+        usable_day_trades = day_trades_remaining - settings.get("reserve_day_trades")
         if usable_day_trades <= 0:
-            return False, f"Reserving {settings.RESERVE_DAY_TRADES} day trade(s) for emergencies"
+            return False, f"Reserving {settings.get('reserve_day_trades')} day trade(s) for emergencies"
 
         # Only allow day trades for high-confidence signals
-        if score < settings.MIN_SCORE_FOR_DAY_TRADE:
-            return False, f"Score {score:.0f} < {settings.MIN_SCORE_FOR_DAY_TRADE} (swing trade only)"
+        if score < settings.get("min_score_for_day_trade"):
+            return False, f"Score {score:.0f} < {settings.get('min_score_for_day_trade')} (swing trade only)"
 
         return True, f"Day trade allowed ({usable_day_trades} available)"
 

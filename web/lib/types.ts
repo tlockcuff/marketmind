@@ -127,6 +127,14 @@ export interface NewsData {
   updated_at: string;
 }
 
+export interface MarketIndex {
+  symbol: string;
+  price: number;
+  change: number;
+  change_pct: number;
+  is_vix: boolean;
+}
+
 export interface DashboardData {
   account: Account;
   positions: Position[];
@@ -139,5 +147,6 @@ export interface DashboardData {
   status: MarketStatus;
   history: TradeHistoryData;
   news: NewsData;
+  market_indices: MarketIndex[];
   timestamp: string;
 }

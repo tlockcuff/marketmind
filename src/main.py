@@ -11,12 +11,7 @@ import os
 import sys
 import time
 from datetime import datetime
-from pathlib import Path
-
 from config import settings
-
-# PID lock file to prevent multiple instances
-LOCK_FILE = Path(__file__).parent.parent / "logs" / "bot.lock"
 from config.logging_config import setup_logging
 from src.signals.grok_client import GrokClient
 from src.analysis.market_data import MarketDataFetcher
@@ -47,31 +42,53 @@ logger = logging.getLogger(__name__)
 
 
 def acquire_lock() -> bool:
-    """Acquire PID lock. Returns True if successful."""
-    if LOCK_FILE.exists():
-        try:
-            pid = int(LOCK_FILE.read_text().strip())
-            if pid == os.getpid():
-                # Our own stale lock from a restart (common in Docker where PID=1)
-                LOCK_FILE.unlink(missing_ok=True)
-            else:
-                # Check if process is still running
-                os.kill(pid, 0)
-                logger.error(f"Another bot instance running (PID {pid})")
-                return False
-        except (ProcessLookupError, ValueError):
-            # Stale lock file, remove it
-            LOCK_FILE.unlink(missing_ok=True)
+    """Acquire PID lock via DB. Returns True if successful."""
+    import socket
+    from src.db import get_db
+    pid = os.getpid()
+    hostname = socket.gethostname()
+    try:
+        with get_db() as conn:
+            # Check for existing instances
+            rows = conn.execute("SELECT pid FROM bot_instances").fetchall()
+            for row in rows:
+                existing_pid = row[0]
+                if existing_pid == pid:
+                    # Our own stale lock from a restart
+                    conn.execute("DELETE FROM bot_instances WHERE pid = %s", (pid,))
+                    conn.commit()
+                else:
+                    try:
+                        os.kill(existing_pid, 0)
+                        logger.error(f"Another bot instance running (PID {existing_pid})")
+                        return False
+                    except (ProcessLookupError, PermissionError):
+                        # Stale entry, remove it
+                        conn.execute("DELETE FROM bot_instances WHERE pid = %s", (existing_pid,))
+                        conn.commit()
 
-    LOCK_FILE.parent.mkdir(exist_ok=True)
-    LOCK_FILE.write_text(str(os.getpid()))
+            conn.execute(
+                "INSERT INTO bot_instances (pid, hostname) VALUES (%s, %s)",
+                (pid, hostname),
+            )
+            conn.commit()
+    except Exception as e:
+        logger.error(f"Failed to acquire lock: {e}")
+        return False
+
     atexit.register(release_lock)
     return True
 
 
 def release_lock():
-    """Release PID lock."""
-    LOCK_FILE.unlink(missing_ok=True)
+    """Release PID lock from DB."""
+    try:
+        from src.db import get_db
+        with get_db() as conn:
+            conn.execute("DELETE FROM bot_instances WHERE pid = %s", (os.getpid(),))
+            conn.commit()
+    except Exception:
+        pass
 
 
 class TradingBot:
@@ -83,15 +100,15 @@ class TradingBot:
         self.position_mgr = PositionManager()
         self.risk_mgr = RiskManager()
         self.discord = DiscordNotifier()
-        self.congress = CongressClient() if settings.CONGRESS_ENABLED else None
+        self.congress = CongressClient() if settings.get("congress_enabled") else None
         self.momentum = MomentumScreener()
         self.ticker_blacklist: set = set()  # Tickers that failed data fetch
         self._owned_symbols: set = set()  # Cache of owned symbols for quick lookup
         self._current_regime: str = "choppy"  # Market regime
         self._recovery_timestamp: datetime | None = None  # Last recovery time
 
-        # Options components
-        self.options_enabled = settings.OPTIONS_ENABLED
+        # Options components (check config override, not just default)
+        self.options_enabled = settings.get("options_enabled")
         if self.options_enabled:
             trading_client = self.alpaca.client
             self.contract_selector = ContractSelector(trading_client)
@@ -377,7 +394,7 @@ class TradingBot:
                     f"\nPositions: {open_count}/{max_pos} | Buying power: ${account.get('buying_power', 0):,.0f}"
                 )
 
-            if self.congress:
+            if settings.get("congress_enabled") and self.congress:
                 try:
                     congress_ctx = self.congress.build_context_string()
                     if congress_ctx:
@@ -1060,6 +1077,10 @@ def main():
     # Setup logging
     level = logging.DEBUG if args.debug else logging.INFO
     setup_logging(level=level)
+
+    # Initialize database schema
+    from src.db import init_db
+    init_db()
 
     if args.usage:
         from src.signals.usage_tracker import get_tracker

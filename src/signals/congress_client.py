@@ -15,17 +15,15 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
-from pathlib import Path
 from typing import List, Optional
 
 import requests
 from bs4 import BeautifulSoup
 
 from config import settings
+from src.db import get_db
 
 logger = logging.getLogger(__name__)
-
-CACHE_FILE = Path(__file__).parent.parent.parent / "logs" / "congress_trades.json"
 
 # Amount ranges ordered for sorting (midpoint estimate)
 AMOUNT_ORDER = {
@@ -509,33 +507,46 @@ class CongressClient:
     # -- Cache --
 
     def _is_cache_fresh(self) -> bool:
-        if not CACHE_FILE.exists():
-            return False
         try:
-            data = json.loads(CACHE_FILE.read_text())
-            cached_at = datetime.fromisoformat(data.get("cached_at", ""))
-            ttl = timedelta(hours=settings.CONGRESS_CACHE_TTL_HOURS)
-            return datetime.now() - cached_at < ttl
-        except (json.JSONDecodeError, ValueError, TypeError):
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT fetched_at FROM congress_cache ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                if not row:
+                    return False
+                ttl = timedelta(hours=settings.CONGRESS_CACHE_TTL_HOURS)
+                return datetime.now(row[0].tzinfo) - row[0] < ttl if row[0].tzinfo else datetime.now() - row[0] < ttl
+        except Exception:
             return False
 
     def _load_cache(self) -> Optional[List[CongressTrade]]:
         try:
-            data = json.loads(CACHE_FILE.read_text())
-            return [CongressTrade(**t) for t in data.get("trades", [])]
+            with get_db() as conn:
+                row = conn.execute(
+                    "SELECT data FROM congress_cache ORDER BY id DESC LIMIT 1"
+                ).fetchone()
+                if not row:
+                    return None
+                return [CongressTrade(**t) for t in row[0].get("trades", [])]
         except Exception as e:
             logger.warning(f"Cache load failed: {e}")
             return None
 
     def _save_cache(self, trades: List[CongressTrade]):
-        CACHE_FILE.parent.mkdir(exist_ok=True)
-        data = {
-            "cached_at": datetime.now().isoformat(),
-            "trade_count": len(trades),
-            "trades": [asdict(t) for t in trades],
-        }
-        CACHE_FILE.write_text(json.dumps(data, indent=2))
-        logger.info(f"Cached {len(trades)} congress trades")
+        try:
+            data = {
+                "trade_count": len(trades),
+                "trades": [asdict(t) for t in trades],
+            }
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO congress_cache (data) VALUES (%s)",
+                    (json.dumps(data),),
+                )
+                conn.commit()
+            logger.info(f"Cached {len(trades)} congress trades")
+        except Exception as e:
+            logger.warning(f"Failed to cache congress trades: {e}")
 
     # -- Helpers --
 

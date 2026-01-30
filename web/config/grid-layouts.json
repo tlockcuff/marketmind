@@ -9,7 +9,8 @@
     { "i": "stats", "x": 16, "y": 12, "w": 8, "h": 6, "minW": 4, "minH": 4 },
     { "i": "config", "x": 16, "y": 18, "w": 8, "h": 8, "minW": 4, "minH": 4 },
     { "i": "api-usage", "x": 16, "y": 26, "w": 8, "h": 6, "minW": 4, "minH": 4 },
-    { "i": "logs", "x": 0, "y": 38, "w": 24, "h": 8, "minW": 8, "minH": 4 }
+    { "i": "account-mgmt", "x": 16, "y": 32, "w": 8, "h": 10, "minW": 4, "minH": 6 },
+    { "i": "logs", "x": 0, "y": 42, "w": 24, "h": 8, "minW": 8, "minH": 4 }
   ],
   "md": [
     { "i": "positions", "x": 0, "y": 0, "w": 14, "h": 12, "minW": 6, "minH": 4 },
@@ -21,7 +22,8 @@
     { "i": "stats", "x": 14, "y": 12, "w": 6, "h": 6, "minW": 4, "minH": 4 },
     { "i": "config", "x": 14, "y": 18, "w": 6, "h": 8, "minW": 4, "minH": 4 },
     { "i": "api-usage", "x": 14, "y": 26, "w": 6, "h": 6, "minW": 4, "minH": 4 },
-    { "i": "logs", "x": 0, "y": 38, "w": 20, "h": 8, "minW": 8, "minH": 4 }
+    { "i": "account-mgmt", "x": 14, "y": 32, "w": 6, "h": 10, "minW": 4, "minH": 6 },
+    { "i": "logs", "x": 0, "y": 42, "w": 20, "h": 8, "minW": 8, "minH": 4 }
   ],
   "sm": [
     { "i": "positions", "x": 0, "y": 0, "w": 12, "h": 12, "minW": 6, "minH": 4 },
@@ -33,6 +35,7 @@
     { "i": "config", "x": 0, "y": 46, "w": 12, "h": 8, "minW": 4, "minH": 4 },
     { "i": "api-usage", "x": 0, "y": 54, "w": 12, "h": 6, "minW": 4, "minH": 4 },
     { "i": "news", "x": 0, "y": 60, "w": 12, "h": 10, "minW": 6, "minH": 4 },
-    { "i": "logs", "x": 0, "y": 70, "w": 12, "h": 8, "minW": 8, "minH": 4 }
+    { "i": "account-mgmt", "x": 0, "y": 70, "w": 12, "h": 10, "minW": 4, "minH": 6 },
+    { "i": "logs", "x": 0, "y": 80, "w": 12, "h": 8, "minW": 8, "minH": 4 }
   ]
 }

@@ -48,15 +48,15 @@ class PositionManager:
                     qty=p["qty"],
                     entry_price=p["avg_entry"],
                     entry_time=datetime.now(),
-                    stop_loss=p["avg_entry"] * (1 - settings.STOP_LOSS_PCT),
-                    take_profit=p["avg_entry"] * (1 + settings.TAKE_PROFIT_PCT),
+                    stop_loss=p["avg_entry"] * (1 - settings.get("stop_loss_pct")),
+                    take_profit=p["avg_entry"] * (1 + settings.get("take_profit_pct")),
                     direction="buy" if p["qty"] > 0 else "sell",
                     score=0,
                 )
 
     def can_open_position(self) -> bool:
         """Check if we can open new position."""
-        return len(self.positions) < settings.MAX_CONCURRENT_POSITIONS
+        return len(self.positions) < settings.get("max_concurrent_positions")
 
     def can_open_in_sector(self, sector: str) -> tuple[bool, str]:
         """Check sector concentration limit."""
@@ -81,7 +81,7 @@ class PositionManager:
         equity = account.get("equity", 0)
 
         # Base position size
-        max_position_value = equity * settings.MAX_POSITION_PCT
+        max_position_value = equity * settings.get("max_position_pct")
 
         # Adjust based on score — aggressive sizing
         if score >= 80:
@@ -247,13 +247,13 @@ class PositionManager:
             reason = ""
 
             # Time-based: force close after MAX_HOLD_HOURS
-            if held_hours > settings.MAX_HOLD_HOURS:
+            if held_hours > settings.get("max_hold_hours"):
                 should_close = True
                 reason = f"max_hold_{held_hours:.0f}h"
-                logger.info(f"{symbol} held {held_hours:.0f}h > {settings.MAX_HOLD_HOURS}h, force closing")
+                logger.info(f"{symbol} held {held_hours:.0f}h > {settings.get('max_hold_hours')}h, force closing")
 
             # Time-based: tighten stop to breakeven+0.5% after STALE_POSITION_HOURS
-            elif held_hours > settings.STALE_POSITION_HOURS:
+            elif held_hours > settings.get("stale_position_hours"):
                 breakeven_stop = pos.entry_price * (1.005 if pos.direction == "buy" else 0.995)
                 if pos.direction == "buy" and pos.stop_loss < breakeven_stop:
                     logger.info(f"{symbol} stale ({held_hours:.0f}h), tightening stop to breakeven+0.5%: {breakeven_stop:.2f}")

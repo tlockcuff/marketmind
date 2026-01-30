@@ -19,15 +19,23 @@ from api.routes.status import router as status_router
 from api.routes.history import router as history_router
 from api.routes.target import router as target_router
 from api.routes.news import router as news_router
+from api.routes.reset import router as reset_router
+from api.routes.keys import router as keys_router
+from api.routes.bot import router as bot_router
+from config.logging_config import setup_logging
 
-logging.basicConfig(level=logging.INFO)
+setup_logging()
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    from src.db import init_db
+    init_db()
     manager.start()
     yield
     manager.stop()
+    from api.bot_manager import get_bot_manager
+    get_bot_manager().stop()
 
 
 app = FastAPI(title="Day Trading Dashboard API", lifespan=lifespan)
@@ -53,6 +61,9 @@ app.include_router(status_router)
 app.include_router(history_router)
 app.include_router(target_router)
 app.include_router(news_router)
+app.include_router(reset_router)
+app.include_router(keys_router)
+app.include_router(bot_router)
 
 
 @app.get("/api/health")

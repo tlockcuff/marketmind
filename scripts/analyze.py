@@ -3,37 +3,70 @@
 
 import argparse
 import csv
-import json
 import sys
 from collections import defaultdict
 from datetime import datetime
-from io import StringIO
 from pathlib import Path
 
-LOGS_DIR = Path(__file__).parent.parent / "logs"
+# Add project root to path
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
+from src.db import get_db, init_db
 
 
 def load_trades(mode: str) -> list:
-    path = LOGS_DIR / f"{mode}_trade_history.json"
-    if not path.exists():
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT symbol, direction, qty, entry_price, entry_time,
+                          stop_loss, take_profit, score, grok_rationale,
+                          score_breakdown, status, exit_price, exit_time, pnl,
+                          asset_type, option_details, sector, atr_at_entry,
+                          trailing_stop_updates, scale_out_level
+                   FROM trades WHERE mode = %s AND status != 'open'
+                   ORDER BY exit_time DESC""",
+                (mode,),
+            ).fetchall()
+            return [
+                {
+                    "symbol": r[0], "direction": r[1], "qty": r[2],
+                    "entry_price": float(r[3]) if r[3] else 0,
+                    "entry_time": r[4].isoformat() if r[4] else None,
+                    "score": float(r[7]) if r[7] else 0,
+                    "score_breakdown": r[9] or {},
+                    "status": r[10],
+                    "exit_price": float(r[11]) if r[11] else None,
+                    "exit_time": r[12].isoformat() if r[12] else None,
+                    "pnl": float(r[13]) if r[13] else None,
+                    "sector": r[16],
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f"Failed to load trades: {e}")
         return []
-    data = json.loads(path.read_text())
-    return data.get("closed", [])
 
 
 def load_rejected(mode: str) -> list:
-    path = LOGS_DIR / f"{mode}_rejected_signals.jsonl"
-    if not path.exists():
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT symbol, direction, score, reason, score_breakdown, sector, created_at
+                   FROM rejected_signals WHERE mode = %s
+                   ORDER BY created_at DESC""",
+                (mode,),
+            ).fetchall()
+            return [
+                {
+                    "symbol": r[0], "direction": r[1], "score": float(r[2]) if r[2] else 0,
+                    "reason": r[3], "score_breakdown": r[4] or {}, "sector": r[5],
+                    "timestamp": r[6].isoformat() if r[6] else None,
+                }
+                for r in rows
+            ]
+    except Exception as e:
+        print(f"Failed to load rejected signals: {e}")
         return []
-    entries = []
-    for line in path.read_text().splitlines():
-        line = line.strip()
-        if line:
-            try:
-                entries.append(json.loads(line))
-            except json.JSONDecodeError:
-                pass
-    return entries
 
 
 def fmt_pct(v):
@@ -300,6 +333,7 @@ def main():
     parser.add_argument("--csv", metavar="FILE", help="Export trades to CSV")
     args = parser.parse_args()
 
+    init_db()
     trades = load_trades(args.mode)
     rejected = load_rejected(args.mode)
 

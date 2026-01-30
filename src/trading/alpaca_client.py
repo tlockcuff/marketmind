@@ -1,6 +1,4 @@
-import json
 import logging
-from pathlib import Path
 from typing import Optional, List
 from dataclasses import dataclass
 
@@ -15,6 +13,7 @@ from alpaca.trading.requests import (
 from alpaca.trading.enums import OrderSide, TimeInForce, OrderStatus, QueryOrderStatus
 
 from config import settings
+from src.db import get_db
 
 logger = logging.getLogger(__name__)
 
@@ -29,9 +28,6 @@ class OrderResult:
     message: str
 
 
-SYMBOL_CACHE_FILE = Path(__file__).parent.parent.parent / "logs" / "symbol_cache.json"
-
-
 class AlpacaClient:
     # Class-level cache for symbol names (persists across instances)
     _symbol_cache: dict = None
@@ -44,25 +40,30 @@ class AlpacaClient:
             paper=self.paper,
         )
         logger.info(f"Alpaca client initialized (mode={'paper' if self.paper else 'LIVE'})")
-        # Load cache from disk on first init
+        # Load cache from DB on first init
         if AlpacaClient._symbol_cache is None:
             AlpacaClient._symbol_cache = self._load_cache()
 
     def _load_cache(self) -> dict:
-        """Load symbol cache from disk."""
-        if SYMBOL_CACHE_FILE.exists():
-            try:
-                return json.loads(SYMBOL_CACHE_FILE.read_text())
-            except:
-                pass
-        return {}
-
-    def _save_cache(self):
-        """Save symbol cache to disk."""
+        """Load symbol cache from DB."""
         try:
-            SYMBOL_CACHE_FILE.parent.mkdir(exist_ok=True)
-            SYMBOL_CACHE_FILE.write_text(json.dumps(self._symbol_cache, indent=2))
-        except:
+            with get_db() as conn:
+                rows = conn.execute("SELECT symbol, name FROM symbol_cache").fetchall()
+                return {r[0]: r[1] for r in rows}
+        except Exception:
+            return {}
+
+    def _save_cache_entry(self, symbol: str, name: str):
+        """Save a single symbol cache entry to DB."""
+        try:
+            with get_db() as conn:
+                conn.execute(
+                    "INSERT INTO symbol_cache (symbol, name) VALUES (%s, %s) "
+                    "ON CONFLICT (symbol) DO UPDATE SET name = EXCLUDED.name",
+                    (symbol, name),
+                )
+                conn.commit()
+        except Exception:
             pass
 
     def get_asset_name(self, symbol: str) -> str:
@@ -83,7 +84,7 @@ class AlpacaClient:
             if len(name) > 15:
                 name = name[:14] + "."
             self._symbol_cache[symbol] = name
-            self._save_cache()
+            self._save_cache_entry(symbol, name)
             return name
         except Exception as e:
             logger.debug(f"Failed to get asset name for {symbol}: {e}")

@@ -45,7 +45,7 @@ def calculate_trade_score(
     - Volume/momentum: 15%
     - Risk/reward ratio: 15%
     """
-    weights = settings.SCORING_WEIGHTS
+    weights = settings.get("scoring_weights")
 
     # Grok confidence score (already 0-100)
     grok_score = grok_confidence
@@ -154,8 +154,8 @@ def calculate_risk_reward_score(
     """Score based on risk/reward ratio."""
     if not entry_price or not stop_loss or not take_profit:
         # Use default settings
-        stop_loss_pct = settings.STOP_LOSS_PCT
-        take_profit_pct = settings.TAKE_PROFIT_PCT
+        stop_loss_pct = settings.get("stop_loss_pct")
+        take_profit_pct = settings.get("take_profit_pct")
         rr_ratio = take_profit_pct / stop_loss_pct if stop_loss_pct > 0 else 1
     else:
         if direction in ("buy", "long"):
