@@ -16,8 +16,8 @@ services:
     build:
       context: .
       dockerfile: api/Dockerfile
-    expose:
-      - "8000"
+    ports:
+      - "8000:8000"
     env_file:
       - .env
     volumes:
@@ -34,21 +34,9 @@ services:
     build:
       context: .
       dockerfile: web/Dockerfile
-    expose:
-      - "3000"
+    ports:
+      - "5000:3000"
     environment:
       - PORT=3000
       - HOSTNAME=0.0.0.0
-    restart: unless-stopped
-
-  nginx:
-    image: nginx:alpine
-    ports:
-      - "5000:5000"
-      - "8000:8000"
-    volumes:
-      - ./nginx.conf:/etc/nginx/conf.d/default.conf:ro
-    depends_on:
-      - api
-      - web
     restart: unless-stopped
