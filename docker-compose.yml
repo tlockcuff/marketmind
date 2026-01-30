@@ -39,4 +39,5 @@ services:
     environment:
       - PORT=3000
       - HOSTNAME=0.0.0.0
+      - API_BASE_URL=${API_BASE_URL}
     restart: unless-stopped
