@@ -130,11 +130,11 @@ Marketmind uses `grok-4-1-fast-reasoning`.
 
 ---
 
-## 📰 Finhub Setup (Optional)
+## 📰 Finnhub Setup (Optional)
 
-[Finhub](https://finhub.io) is the news provider — it provides news articles for the dashboard to use
+[Finnhub](https://finnhub.io) is the news provider — it provides news articles for the dashboard to use
 
-1. Sign up at [finhub.io](https://finhub.io)
+1. Sign up at [finnhub.io](https://finnhub.io)
 2. From the dashboard, go to **API Keys**
 3. Click **Generate New Key**
 4. Paste the key into your `.env`:

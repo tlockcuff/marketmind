@@ -68,7 +68,15 @@ app.include_router(bot_router)
 
 @app.get("/api/health")
 async def health():
-    return {"status": "ok"}
+    try:
+        from src.db import get_db
+        with get_db() as conn:
+            conn.execute("SELECT 1")
+        db_ok = True
+    except Exception:
+        db_ok = False
+    status = "ok" if db_ok else "degraded"
+    return {"status": status, "db": db_ok}
 
 
 @app.websocket("/ws")

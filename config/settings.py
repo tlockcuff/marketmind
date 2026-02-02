@@ -311,3 +311,47 @@ def validate_setting(key: str, value: Any) -> tuple[bool, str]:
         if "max" in meta and value > meta["max"]:
             return False, f"{key} max is {meta['max']}"
     return True, ""
+
+
+def validate_config_cross(overrides: dict) -> list[str]:
+    """Cross-validate config values that depend on each other.
+    Returns list of error strings (empty = ok)."""
+    errors = []
+
+    def _val(key):
+        """Get value from overrides or current setting."""
+        if key in overrides:
+            return overrides[key]
+        return get(key)
+
+    # stop_loss must be < take_profit
+    sl = _val("stop_loss_pct")
+    tp = _val("take_profit_pct")
+    if sl is not None and tp is not None and sl >= tp:
+        errors.append(f"stop_loss_pct ({sl}) must be less than take_profit_pct ({tp})")
+
+    # options DTE min must be <= DTE max
+    dte_min = _val("options_dte_min")
+    dte_max = _val("options_dte_max")
+    if dte_min is not None and dte_max is not None and dte_min > dte_max:
+        errors.append(f"options_dte_min ({dte_min}) must be <= options_dte_max ({dte_max})")
+
+    # reserve_day_trades must be < day_trade_limit
+    reserve = _val("reserve_day_trades")
+    limit = _val("day_trade_limit")
+    if reserve is not None and limit is not None and reserve >= limit:
+        errors.append(f"reserve_day_trades ({reserve}) must be less than day_trade_limit ({limit})")
+
+    # min_score_for_day_trade must be >= min_score_threshold
+    dt_score = _val("min_score_for_day_trade")
+    min_score = _val("min_score_threshold")
+    if dt_score is not None and min_score is not None and dt_score < min_score:
+        errors.append(f"min_score_for_day_trade ({dt_score}) must be >= min_score_threshold ({min_score})")
+
+    # stale_position_hours must be <= max_hold_hours
+    stale = _val("stale_position_hours")
+    max_hold = _val("max_hold_hours")
+    if stale is not None and max_hold is not None and stale > max_hold:
+        errors.append(f"stale_position_hours ({stale}) must be <= max_hold_hours ({max_hold})")
+
+    return errors

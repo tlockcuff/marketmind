@@ -17,6 +17,9 @@ async def update_config(body: dict):
     validated = {}
     for key, value in body.items():
         key = key.lower()
+        if key not in settings.EDITABLE_SETTINGS:
+            errors[key] = f"unknown setting: {key}"
+            continue
         ok, msg = settings.validate_setting(key, value)
         if not ok:
             errors[key] = msg
@@ -30,6 +33,12 @@ async def update_config(body: dict):
             validated[key] = value
     if errors:
         raise HTTPException(status_code=400, detail=errors)
+
+    # Cross-validate related settings
+    cross_errors = settings.validate_config_cross(validated)
+    if cross_errors:
+        raise HTTPException(status_code=400, detail={"_cross_validation": cross_errors})
+
     settings.set_config_overrides(validated)
     return {"updated": list(validated.keys())}
 
