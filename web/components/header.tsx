@@ -1,6 +1,8 @@
 "use client";
 
 import { useState } from "react";
+import Link from "next/link";
+import { usePathname } from "next/navigation";
 import type { MarketStatus, MarketIndex } from "@/lib/types";
 import { useMarketHours } from "@/hooks/use-market-hours";
 import { DocsSlideover } from "@/components/docs-slideover";
@@ -23,6 +25,7 @@ interface HeaderProps {
 
 export function Header({ status, connected, indices }: HeaderProps) {
   const [loading, setLoading] = useState(false);
+  const pathname = usePathname();
   const mode = status?.trading_mode === "live" ? "LIVE" : "PAPER";
   const modeColor = mode === "LIVE" ? "text-red-400 font-bold" : "text-green-400";
   const botRunning = status?.bot_running ?? false;
@@ -52,6 +55,23 @@ export function Header({ status, connected, indices }: HeaderProps) {
     <div className="flex items-center justify-between px-4 py-2 bg-[#12121a] border border-border rounded-sm">
       <div className="flex items-center gap-4">
         <span className="text-[#ff9e2c] font-bold text-sm tracking-wider">MARKETMIND</span>
+        <Link
+          href="/"
+          className={`text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+            pathname === "/" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Dashboard
+        </Link>
+        <Link
+          href="/analytics"
+          className={`text-[11px] font-semibold uppercase tracking-wider transition-colors ${
+            pathname === "/analytics" ? "text-foreground" : "text-muted-foreground hover:text-foreground"
+          }`}
+        >
+          Analytics
+        </Link>
+        <span className="text-[#3a3a48]">|</span>
         <span className={`text-xs font-semibold ${modeColor}`}>{mode}</span>
         <span className="text-[#3a3a48]">|</span>
         <button

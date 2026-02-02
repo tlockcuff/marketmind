@@ -22,6 +22,7 @@ from api.routes.news import router as news_router
 from api.routes.reset import router as reset_router
 from api.routes.keys import router as keys_router
 from api.routes.bot import router as bot_router
+from api.routes.analytics import router as analytics_router
 from config.logging_config import setup_logging
 
 setup_logging()
@@ -64,6 +65,7 @@ app.include_router(news_router)
 app.include_router(reset_router)
 app.include_router(keys_router)
 app.include_router(bot_router)
+app.include_router(analytics_router)
 
 
 @app.get("/api/health")

@@ -318,6 +318,149 @@ def get_market_indices() -> list[dict]:
         return []
 
 
+def get_analytics_data(date_range: str = "ALL") -> dict:
+    """Aggregate analytics from trades + daily_stats tables."""
+    from datetime import datetime, timedelta
+
+    mode = _mode()
+    now = datetime.now()
+
+    range_map = {
+        "1W": timedelta(weeks=1),
+        "1M": timedelta(days=30),
+        "3M": timedelta(days=90),
+    }
+    cutoff = now - range_map[date_range] if date_range in range_map else None
+
+    try:
+        with get_db() as conn:
+            # Equity curve from daily_stats
+            if cutoff:
+                eq_rows = conn.execute(
+                    "SELECT date, starting_equity FROM daily_stats WHERE date >= %s ORDER BY date",
+                    (cutoff.date(),),
+                ).fetchall()
+            else:
+                eq_rows = conn.execute(
+                    "SELECT date, starting_equity FROM daily_stats ORDER BY date"
+                ).fetchall()
+
+            equity_curve = [
+                {"date": r[0].isoformat(), "equity": float(r[1]) if r[1] else 0}
+                for r in eq_rows
+            ]
+
+            # Closed trades
+            q = """SELECT symbol, direction, qty, entry_price, exit_price, pnl,
+                          entry_time, exit_time, sector, score
+                   FROM trades WHERE mode = %s AND status = 'closed'"""
+            params: list = [mode]
+            if cutoff:
+                q += " AND exit_time >= %s"
+                params.append(cutoff)
+            q += " ORDER BY exit_time"
+            trade_rows = conn.execute(q, params).fetchall()
+
+            trades = []
+            for r in trade_rows:
+                trades.append({
+                    "symbol": r[0],
+                    "direction": r[1],
+                    "qty": r[2],
+                    "entry_price": float(r[3]) if r[3] else 0,
+                    "exit_price": float(r[4]) if r[4] else 0,
+                    "pnl": float(r[5]) if r[5] else 0,
+                    "entry_time": r[6].isoformat() if r[6] else None,
+                    "exit_time": r[7].isoformat() if r[7] else None,
+                    "sector": r[8] or "Unknown",
+                    "score": float(r[9]) if r[9] else 0,
+                })
+
+            # Compute metrics
+            pnls = [t["pnl"] for t in trades]
+            wins = [p for p in pnls if p > 0]
+            losses = [p for p in pnls if p < 0]
+
+            total_pnl = sum(pnls)
+            win_count = len(wins)
+            loss_count = len(losses)
+            total_trades = len(pnls)
+            win_rate = (win_count / total_trades * 100) if total_trades else 0
+            avg_win = (sum(wins) / win_count) if wins else 0
+            avg_loss = (sum(losses) / loss_count) if losses else 0
+            profit_factor = (sum(wins) / abs(sum(losses))) if losses else 0
+            best_trade = max(pnls) if pnls else 0
+            worst_trade = min(pnls) if pnls else 0
+
+            # Max drawdown from equity curve
+            max_drawdown = 0
+            peak = 0
+            for pt in equity_curve:
+                eq = pt["equity"]
+                if eq > peak:
+                    peak = eq
+                dd = (peak - eq) / peak * 100 if peak else 0
+                if dd > max_drawdown:
+                    max_drawdown = dd
+
+            # Sharpe ratio (daily returns from equity curve)
+            sharpe = 0
+            if len(equity_curve) >= 2:
+                returns = []
+                for i in range(1, len(equity_curve)):
+                    prev = equity_curve[i - 1]["equity"]
+                    cur = equity_curve[i]["equity"]
+                    if prev:
+                        returns.append((cur - prev) / prev)
+                if returns:
+                    import statistics
+                    mean_r = statistics.mean(returns)
+                    std_r = statistics.stdev(returns) if len(returns) > 1 else 0
+                    sharpe = (mean_r / std_r * (252 ** 0.5)) if std_r else 0
+
+            # Sector breakdown
+            sector_pnl: dict[str, float] = {}
+            for t in trades:
+                s = t["sector"]
+                sector_pnl[s] = sector_pnl.get(s, 0) + t["pnl"]
+            sector_breakdown = [{"sector": k, "pnl": round(v, 2)} for k, v in sector_pnl.items()]
+
+            # Cumulative P/L series
+            cumulative = []
+            running = 0
+            for t in trades:
+                running += t["pnl"]
+                cumulative.append({
+                    "date": t["exit_time"],
+                    "cumulative_pnl": round(running, 2),
+                    "symbol": t["symbol"],
+                    "pnl": t["pnl"],
+                })
+
+            return {
+                "equity_curve": equity_curve,
+                "trades": trades,
+                "cumulative_pnl": cumulative,
+                "sector_breakdown": sector_breakdown,
+                "metrics": {
+                    "total_pnl": round(total_pnl, 2),
+                    "total_trades": total_trades,
+                    "win_count": win_count,
+                    "loss_count": loss_count,
+                    "win_rate": round(win_rate, 1),
+                    "avg_win": round(avg_win, 2),
+                    "avg_loss": round(avg_loss, 2),
+                    "profit_factor": round(profit_factor, 2),
+                    "best_trade": round(best_trade, 2),
+                    "worst_trade": round(worst_trade, 2),
+                    "max_drawdown": round(max_drawdown, 2),
+                    "sharpe_ratio": round(sharpe, 2),
+                },
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def get_full_snapshot() -> dict:
     from datetime import datetime
     return {

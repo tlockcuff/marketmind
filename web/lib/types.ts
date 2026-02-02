@@ -135,6 +135,59 @@ export interface MarketIndex {
   is_vix: boolean;
 }
 
+export interface AnalyticsMetrics {
+  total_pnl: number;
+  total_trades: number;
+  win_count: number;
+  loss_count: number;
+  win_rate: number;
+  avg_win: number;
+  avg_loss: number;
+  profit_factor: number;
+  best_trade: number;
+  worst_trade: number;
+  max_drawdown: number;
+  sharpe_ratio: number;
+}
+
+export interface EquityPoint {
+  date: string;
+  equity: number;
+}
+
+export interface CumulativePnlPoint {
+  date: string;
+  cumulative_pnl: number;
+  symbol: string;
+  pnl: number;
+}
+
+export interface SectorPnl {
+  sector: string;
+  pnl: number;
+}
+
+export interface ClosedTrade {
+  symbol: string;
+  direction: string;
+  qty: number;
+  entry_price: number;
+  exit_price: number;
+  pnl: number;
+  entry_time: string | null;
+  exit_time: string | null;
+  sector: string;
+  score: number;
+}
+
+export interface AnalyticsData {
+  equity_curve: EquityPoint[];
+  trades: ClosedTrade[];
+  cumulative_pnl: CumulativePnlPoint[];
+  sector_breakdown: SectorPnl[];
+  metrics: AnalyticsMetrics;
+}
+
 export interface DashboardData {
   account: Account;
   positions: Position[];
