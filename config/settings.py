@@ -143,6 +143,11 @@ CONGRESS_ENABLED = os.getenv("CONGRESS_ENABLED", "false").lower() == "true"
 CONGRESS_CACHE_TTL_HOURS = 6 # 6 hours cache ttl
 CONGRESS_LOOKBACK_DAYS = 30 # 30 days lookback
 
+# News Sentinel — real-time headline monitor
+NEWS_SENTINEL_ENABLED = os.getenv("NEWS_SENTINEL_ENABLED", "true").lower() == "true"
+NEWS_SENTINEL_INTERVAL = int(os.getenv("NEWS_SENTINEL_INTERVAL", "60"))  # seconds
+NEWS_SENTINEL_USE_GROK = os.getenv("NEWS_SENTINEL_USE_GROK", "false").lower() == "true"
+
 # Daily P/L target (set via env, CLI --target, or web API)
 DAILY_TARGET = float(os.getenv("DAILY_TARGET", "0")) or None  # e.g. 1000 = $1000 target
 
@@ -215,6 +220,10 @@ EDITABLE_SETTINGS = {
     "recovery_cooldown_minutes": {"type": "int",   "min": 0,    "max": 60,   "label": "Recovery Cooldown (min)", "section": "Recovery"},
     # Data Sources
     "congress_enabled":          {"type": "bool",                             "label": "Congress Trading",        "section": "Data Sources"},
+    # News Sentinel
+    "news_sentinel_enabled":     {"type": "bool",                             "label": "News Sentinel",           "section": "Data Sources"},
+    "news_sentinel_interval":    {"type": "int",   "min": 10,   "max": 300,  "label": "Sentinel Interval (s)",   "section": "Data Sources"},
+    "news_sentinel_use_grok":    {"type": "bool",                             "label": "Sentinel Use Grok",       "section": "Data Sources"},
 }
 
 
