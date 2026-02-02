@@ -139,7 +139,7 @@ COVERED_CALL_MIN_PROFIT_PCT = 0.02 # 2% minimum profit percentage for covered ca
 COVERED_CALL_MIN_PREMIUM_PCT = 0.005 # 0.5% minimum premium percentage for covered calls
 
 # Congressional trading data
-CONGRESS_ENABLED = os.getenv("CONGRESS_ENABLED", "true").lower() == "true"
+CONGRESS_ENABLED = os.getenv("CONGRESS_ENABLED", "false").lower() == "true"
 CONGRESS_CACHE_TTL_HOURS = 6 # 6 hours cache ttl
 CONGRESS_LOOKBACK_DAYS = 30 # 30 days lookback
 
