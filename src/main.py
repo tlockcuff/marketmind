@@ -355,9 +355,11 @@ class TradingBot:
         # 1b. Log daily target progress
         self._check_daily_target()
 
-        # 2. Get portfolio-aware advice from Grok
-        if positions:
+        # 2. Get portfolio-aware advice from Grok (only during market hours)
+        if positions and is_market_open():
             self._review_portfolio(positions)
+        elif positions and not is_market_open():
+            logger.info("Skipping portfolio review outside market hours (9:30 AM - 4:00 PM ET)")
 
         # 3. Check stop/target exits + partial profit-taking
         self._check_positions()
@@ -372,38 +374,44 @@ class TradingBot:
                            and self.options_position_mgr.can_open())
 
         if can_open_stock or can_open_options:
-            market_context = self.market_data.get_market_context()
-            # Append regime to context for Grok
-            regime_line = f"\nMarket is {self._current_regime}, VIX={regime_info.get('vix', 'N/A')}"
-            if market_context:
-                market_context += regime_line
+            # Only query Grok during market hours (9:30 AM - 4:00 PM ET)
+            # Skip Grok during after-hours to avoid unnecessary API costs
+            signals = []
+            if is_market_open():
+                market_context = self.market_data.get_market_context()
+                # Append regime to context for Grok
+                regime_line = f"\nMarket is {self._current_regime}, VIX={regime_info.get('vix', 'N/A')}"
+                if market_context:
+                    market_context += regime_line
+                else:
+                    market_context = regime_line
+
+                # Append account stats so Grok can calibrate risk
+                account = self.alpaca.get_account()
+                if account:
+                    equity = account.get("equity", 0)
+                    daily_pl = equity - self.risk_mgr.daily_stats.starting_equity
+                    daily_pct = (daily_pl / self.risk_mgr.daily_stats.starting_equity * 100) if self.risk_mgr.daily_stats.starting_equity else 0
+                    open_count = len(positions)
+                    max_pos = settings.get("max_concurrent_positions")
+                    market_context += (
+                        f"\n\nACCOUNT STATUS:"
+                        f"\nEquity: ${equity:,.0f} | Daily P/L: ${daily_pl:+,.0f} ({daily_pct:+.1f}%)"
+                        f"\nPositions: {open_count}/{max_pos} | Buying power: ${account.get('buying_power', 0):,.0f}"
+                    )
+
+                if settings.get("congress_enabled") and self.congress:
+                    try:
+                        congress_ctx = self.congress.build_context_string()
+                        if congress_ctx:
+                            market_context += "\n\n" + congress_ctx
+                    except Exception as e:
+                        logger.warning(f"Congress data fetch failed: {e}")
+
+                signals = self.grok.get_trade_ideas(market_context=market_context)
+                logger.info(f"Got {len(signals)} signals from Grok")
             else:
-                market_context = regime_line
-
-            # Append account stats so Grok can calibrate risk
-            account = self.alpaca.get_account()
-            if account:
-                equity = account.get("equity", 0)
-                daily_pl = equity - self.risk_mgr.daily_stats.starting_equity
-                daily_pct = (daily_pl / self.risk_mgr.daily_stats.starting_equity * 100) if self.risk_mgr.daily_stats.starting_equity else 0
-                open_count = len(positions)
-                max_pos = settings.get("max_concurrent_positions")
-                market_context += (
-                    f"\n\nACCOUNT STATUS:"
-                    f"\nEquity: ${equity:,.0f} | Daily P/L: ${daily_pl:+,.0f} ({daily_pct:+.1f}%)"
-                    f"\nPositions: {open_count}/{max_pos} | Buying power: ${account.get('buying_power', 0):,.0f}"
-                )
-
-            if settings.get("congress_enabled") and self.congress:
-                try:
-                    congress_ctx = self.congress.build_context_string()
-                    if congress_ctx:
-                        market_context += "\n\n" + congress_ctx
-                except Exception as e:
-                    logger.warning(f"Congress data fetch failed: {e}")
-
-            signals = self.grok.get_trade_ideas(market_context=market_context)
-            logger.info(f"Got {len(signals)} signals from Grok")
+                logger.info("Skipping Grok scan outside market hours (9:30 AM - 4:00 PM ET)")
 
             # Add momentum screener signals (independent of Grok)
             try:
