@@ -17,7 +17,7 @@ Scrapes STOCK Act PTR (Periodic Transaction Report) filings from both chambers o
 
 | Setting | Default | Env Override | Purpose |
 |---------|---------|-------------|---------|
-| `CONGRESS_ENABLED` | `True` | `CONGRESS_ENABLED=false` | 🔘 Kill switch |
+| `CONGRESS_ENABLED` | `False` | `CONGRESS_ENABLED=true` | 🔘 Kill switch |
 | `CONGRESS_CACHE_TTL_HOURS` | `6` | — | ⏱️ Cache freshness window |
 | `CONGRESS_LOOKBACK_DAYS` | `30` | — | 📅 How far back to scrape |
 
