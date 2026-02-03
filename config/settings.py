@@ -91,7 +91,8 @@ RECOVERY_COOLDOWN_MINUTES = 5       # cooldown after recovery
 # Scoring weights
 SCORING_WEIGHTS = {
     "grok_confidence": 0.20, # 20% weight for Grok confidence
-    "technical_alignment": 0.30, # 30% weight for technical alignment
+    "technical_alignment": 0.20, # 20% weight for technical alignment
+    "mtf_alignment": 0.10, # 10% weight for multi-timeframe alignment
     "backtest_performance": 0.20, # 20% weight for backtest performance
     "volume_momentum": 0.15, # 15% weight for volume momentum
     "risk_reward": 0.15, # 15% weight for risk/reward

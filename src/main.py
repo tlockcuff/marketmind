@@ -639,6 +639,10 @@ class TradingBot:
             self.ticker_blacklist.add(ticker)
             return
 
+        # Get multi-timeframe data
+        logger.info(f"{ticker}: fetching MTF data...")
+        mtf_data = self.market_data.get_bars_mtf(ticker)
+
         quote = self.market_data.get_quote(ticker)
         current_price = quote.get("price") if quote else None
         if not current_price:
@@ -675,6 +679,7 @@ class TradingBot:
             entry_price=current_price,
             stop_loss=stop_loss,
             take_profit=take_profit,
+            mtf_data=mtf_data,
         )
 
         logger.info(f"{ticker} score: {score.total_score} ({score.action})")
@@ -702,8 +707,8 @@ class TradingBot:
                     symbol=ticker, direction=signal.direction,
                     score=score.total_score, reason=sector_msg,
                     score_breakdown={"grok": score.grok_score, "technical": score.technical_score,
-                                     "backtest": score.backtest_score, "volume": score.volume_score,
-                                     "risk_reward": score.risk_reward_score},
+                                     "mtf": score.mtf_score, "backtest": score.backtest_score,
+                                     "volume": score.volume_score, "risk_reward": score.risk_reward_score},
                     sector=sector,
                 )
                 return
@@ -723,8 +728,8 @@ class TradingBot:
                 symbol=ticker, direction=signal.direction,
                 score=score.total_score, reason=f"below_threshold_{score_threshold}",
                 score_breakdown={"grok": score.grok_score, "technical": score.technical_score,
-                                 "backtest": score.backtest_score, "volume": score.volume_score,
-                                 "risk_reward": score.risk_reward_score},
+                                 "mtf": score.mtf_score, "backtest": score.backtest_score,
+                                 "volume": score.volume_score, "risk_reward": score.risk_reward_score},
                 sector=sector,
             )
             # Notify about signal found but not traded
@@ -807,6 +812,7 @@ class TradingBot:
                 score_breakdown={
                     "grok": score.grok_score,
                     "technical": score.technical_score,
+                    "mtf": score.mtf_score,
                     "backtest": score.backtest_score,
                     "volume": score.volume_score,
                     "risk_reward": score.risk_reward_score,

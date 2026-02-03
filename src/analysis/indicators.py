@@ -146,6 +146,70 @@ def _lerp(value: float, low: float, high: float, out_low: float, out_high: float
     return out_low + t * (out_high - out_low)
 
 
+def mtf_alignment_score(
+    mtf_data: dict[str, Optional[pd.DataFrame]],
+    direction: str,
+) -> float:
+    """Calculate multi-timeframe alignment score.
+
+    Args:
+        mtf_data: Dict mapping timeframe (e.g. "1h", "4h", "1d") to DataFrame
+        direction: "buy"/"long" or "sell"/"short"
+
+    Returns:
+        Score 0-100. 100 = all timeframes aligned with direction, 0 = all opposite
+    """
+    if not mtf_data:
+        return 50  # neutral if no data
+
+    is_buy = direction in ("buy", "long")
+    trends = []
+
+    for tf, df in mtf_data.items():
+        if df is None or len(df) < 20:
+            continue
+
+        try:
+            close = df["close"]
+            # Determine trend: SMA20 vs SMA50
+            sma_20 = SMAIndicator(close, window=20).sma_indicator().iloc[-1]
+            sma_50_series = SMAIndicator(close, window=min(50, len(close))).sma_indicator()
+            sma_50 = sma_50_series.iloc[-1] if not sma_50_series.isna().all() else sma_20
+            current_price = close.iloc[-1]
+
+            # Trend determination
+            if sma_20 > sma_50 * 1.01 and current_price > sma_20:
+                trends.append("bullish")
+            elif sma_20 < sma_50 * 0.99 and current_price < sma_20:
+                trends.append("bearish")
+            else:
+                trends.append("neutral")
+
+            logger.debug(f"MTF {tf}: trend={trends[-1]} (price={current_price:.2f}, SMA20={sma_20:.2f}, SMA50={sma_50:.2f})")
+        except Exception as e:
+            logger.warning(f"MTF trend calc failed for {tf}: {e}")
+            continue
+
+    if not trends:
+        return 50  # neutral if no valid data
+
+    # Count alignment
+    aligned_count = sum(1 for t in trends if (is_buy and t == "bullish") or (not is_buy and t == "bearish"))
+    neutral_count = sum(1 for t in trends if t == "neutral")
+    opposite_count = sum(1 for t in trends if (is_buy and t == "bearish") or (not is_buy and t == "bullish"))
+
+    total = len(trends)
+    alignment_pct = aligned_count / total
+    neutral_pct = neutral_count / total
+    opposite_pct = opposite_count / total
+
+    # Score: 100 for full alignment, 50 for neutral, 0 for opposite
+    score = 50 + (alignment_pct * 50) - (opposite_pct * 50)
+
+    logger.info(f"MTF alignment: {aligned_count}/{total} aligned, {neutral_count} neutral, {opposite_count} opposite → score={score:.1f}")
+    return max(0, min(100, score))
+
+
 def get_technical_alignment_score(indicators: IndicatorResult, direction: str) -> float:
     """Score 0-100 how well technicals align with trade direction. Uses gradient scoring."""
     if direction not in ("buy", "long"):

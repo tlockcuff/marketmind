@@ -6,7 +6,8 @@ from typing import Optional
 import pytz
 
 from config import settings
-from src.analysis.indicators import IndicatorResult, get_technical_alignment_score
+from src.analysis.indicators import IndicatorResult, get_technical_alignment_score, mtf_alignment_score
+import pandas as pd
 from src.analysis.backtester import BacktestResult
 
 logger = logging.getLogger(__name__)
@@ -17,6 +18,7 @@ class TradeScore:
     total_score: float
     grok_score: float
     technical_score: float
+    mtf_score: float
     backtest_score: float
     volume_score: float
     risk_reward_score: float
@@ -34,13 +36,15 @@ def calculate_trade_score(
     entry_price: float = None,
     stop_loss: float = None,
     take_profit: float = None,
+    mtf_data: Optional[dict[str, pd.DataFrame]] = None,
 ) -> TradeScore:
     """
     Calculate weighted trade score.
 
     Weights:
     - Grok confidence: 20%
-    - Technical alignment: 30%
+    - Technical alignment: 20%
+    - MTF alignment: 10%
     - Backtest performance: 20%
     - Volume/momentum: 15%
     - Risk/reward ratio: 15%
@@ -55,6 +59,12 @@ def calculate_trade_score(
         technical_score = get_technical_alignment_score(indicators, direction)
     else:
         technical_score = 50  # neutral if no data
+
+    # MTF alignment score
+    if mtf_data:
+        mtf_score = mtf_alignment_score(mtf_data, direction)
+    else:
+        mtf_score = 50  # neutral if no data
 
     # Backtest score
     if backtest:
@@ -74,6 +84,7 @@ def calculate_trade_score(
     total = (
         grok_score * weights["grok_confidence"]
         + technical_score * weights["technical_alignment"]
+        + mtf_score * weights["mtf_alignment"]
         + backtest_score * weights["backtest_performance"]
         + volume_score * weights["volume_momentum"]
         + risk_reward_score * weights["risk_reward"]
@@ -93,12 +104,13 @@ def calculate_trade_score(
 
     logger.info(
         f"Score: {total:.1f} ({action}) — grok={grok_score:.0f} tech={technical_score:.0f} "
-        f"bt={backtest_score:.0f} vol={volume_score:.0f} rr={risk_reward_score:.0f}"
+        f"mtf={mtf_score:.0f} bt={backtest_score:.0f} vol={volume_score:.0f} rr={risk_reward_score:.0f}"
     )
     return TradeScore(
         total_score=round(total, 2),
         grok_score=round(grok_score, 2),
         technical_score=round(technical_score, 2),
+        mtf_score=round(mtf_score, 2),
         backtest_score=round(backtest_score, 2),
         volume_score=round(volume_score, 2),
         risk_reward_score=round(risk_reward_score, 2),

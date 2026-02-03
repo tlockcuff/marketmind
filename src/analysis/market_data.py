@@ -204,3 +204,28 @@ class MarketDataFetcher:
         except Exception as e:
             logger.warning(f"Failed to get quote for {ticker}: {e}")
             return None
+
+    def get_bars_mtf(
+        self,
+        ticker: str,
+        timeframes: Optional[list[tuple[str, int]]] = None,
+    ) -> dict[str, Optional[pd.DataFrame]]:
+        """Fetch multi-timeframe bars for MTF analysis.
+
+        Args:
+            ticker: Stock symbol
+            timeframes: List of (timeframe, days) tuples. Defaults to [("1h", 30), ("4h", 60), ("1d", 90)]
+
+        Returns:
+            Dict mapping timeframe to DataFrame
+        """
+        if timeframes is None:
+            timeframes = [("1h", 30), ("4h", 60), ("1d", 90)]
+
+        result = {}
+        for tf, days in timeframes:
+            logger.info(f"Fetching MTF {tf} bars for {ticker}...")
+            df = self.get_bars(ticker, days=days, timeframe=tf)
+            result[tf] = df
+
+        return result
