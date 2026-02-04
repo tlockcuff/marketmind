@@ -45,6 +45,8 @@ export interface Account {
   daily_change: number;
   daily_change_pct: number;
   total_pnl: number;
+  realized_pnl: number;
+  unrealized_pnl: number;
   initial_margin: number;
   maintenance_margin: number;
   day_trade_count: number;

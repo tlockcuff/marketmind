@@ -98,7 +98,7 @@ def get_account() -> dict:
             return {"error": "Alpaca keys not configured"}
         account = c.get_account()
 
-        # Query total P/L from trades table
+        # Query realized P/L from trades table (closed trades)
         mode = _mode()
         try:
             with get_db() as conn:
@@ -106,9 +106,19 @@ def get_account() -> dict:
                     "SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE mode = %s AND status != 'open'",
                     (mode,)
                 ).fetchone()
-                account["total_pnl"] = float(result[0]) if result else 0
+                account["realized_pnl"] = float(result[0]) if result else 0
         except Exception as e:
-            account["total_pnl"] = 0
+            account["realized_pnl"] = 0
+
+        # Calculate unrealized P/L from current positions
+        try:
+            positions = c.get_positions()
+            account["unrealized_pnl"] = sum(p.get("unrealized_pl", 0) for p in positions)
+        except Exception as e:
+            account["unrealized_pnl"] = 0
+
+        # Total P/L = realized + unrealized
+        account["total_pnl"] = account["realized_pnl"] + account["unrealized_pnl"]
 
         return account
     except Exception as e:
