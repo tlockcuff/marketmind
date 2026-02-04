@@ -477,6 +477,9 @@ class TradingBot:
         closed = self.position_mgr.check_exits(current_prices)
         for symbol in closed:
             logger.info(f"Position closed: {symbol}")
+            price = current_prices.get(symbol)
+            if price:
+                get_trade_history().record_close(symbol, price, "auto_exit")
 
     def _review_portfolio(self, positions: list):
         """Get Grok's advice on current portfolio."""
