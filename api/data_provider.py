@@ -96,7 +96,21 @@ def get_account() -> dict:
         c = _client()
         if c is None:
             return {"error": "Alpaca keys not configured"}
-        return c.get_account()
+        account = c.get_account()
+
+        # Query total P/L from trades table
+        mode = _mode()
+        try:
+            with get_db() as conn:
+                result = conn.execute(
+                    "SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE mode = %s AND status = 'closed'",
+                    (mode,)
+                ).fetchone()
+                account["total_pnl"] = float(result[0]) if result else 0
+        except Exception as e:
+            account["total_pnl"] = 0
+
+        return account
     except Exception as e:
         return {"error": str(e)}
 

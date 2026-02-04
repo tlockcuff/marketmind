@@ -44,6 +44,7 @@ export interface Account {
   last_equity: number;
   daily_change: number;
   daily_change_pct: number;
+  total_pnl: number;
   initial_margin: number;
   maintenance_margin: number;
   day_trade_count: number;
