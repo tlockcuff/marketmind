@@ -448,6 +448,12 @@ class Dashboard:
 
         pl_color = "green" if daily_change >= 0 else "red"
 
+        # Total P/L from $100k baseline
+        starting_balance = 100000.0
+        total_pl = equity - starting_balance
+        total_pl_pct = (total_pl / starting_balance) * 100
+        total_pl_color = "green" if total_pl >= 0 else "red"
+
         # Blocked warnings
         blocked = ""
         if account.get("trading_blocked"):
@@ -462,6 +468,7 @@ class Dashboard:
         table.add_row("Equity", f"[bold]${equity:,.2f}[/]")
         table.add_row("Prev Close", f"${last_equity:,.2f}")
         table.add_row("Daily P/L", f"[bold {pl_color}]${daily_change:+,.2f} ({daily_change_pct:+.2f}%)[/]")
+        table.add_row("Total P/L", f"[bold {total_pl_color}]${total_pl:+,.2f} ({total_pl_pct:+.2f}%)[/]")
         table.add_row("", "")
         table.add_row("Cash", f"${cash:,.2f}")
         table.add_row("Buying Power", f"${buying_power:,.2f}")
