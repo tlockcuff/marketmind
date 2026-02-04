@@ -50,6 +50,11 @@ export function AccountPanel({ account }: Props) {
           value={`${formatMoney(account.daily_change)} (${account.daily_change_pct >= 0 ? "+" : ""}${account.daily_change_pct?.toFixed(2)}%)`}
           className={`font-bold ${plColor}`}
         />
+        <Row
+          label="Total P/L"
+          value={formatMoney(account.total_pnl)}
+          className={`font-bold ${account.total_pnl >= 0 ? "pl-positive" : "pl-negative"}`}
+        />
         <div className="my-1.5 border-t border-border" />
         <Row label="Cash" value={formatMoney(account.cash)} />
         <Row label="Buying Power" value={formatMoney(account.buying_power)} />
