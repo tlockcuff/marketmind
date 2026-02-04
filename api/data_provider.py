@@ -103,7 +103,7 @@ def get_account() -> dict:
         try:
             with get_db() as conn:
                 result = conn.execute(
-                    "SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE mode = %s AND status = 'closed'",
+                    "SELECT COALESCE(SUM(pnl), 0) FROM trades WHERE mode = %s AND status != 'open'",
                     (mode,)
                 ).fetchone()
                 account["total_pnl"] = float(result[0]) if result else 0
@@ -367,7 +367,7 @@ def get_analytics_data(date_range: str = "ALL") -> dict:
             # Closed trades
             q = """SELECT symbol, direction, qty, entry_price, exit_price, pnl,
                           entry_time, exit_time, sector, score
-                   FROM trades WHERE mode = %s AND status = 'closed'"""
+                   FROM trades WHERE mode = %s AND status != 'open'"""
             params: list = [mode]
             if cutoff:
                 q += " AND exit_time >= %s"
