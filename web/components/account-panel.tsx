@@ -55,6 +55,16 @@ export function AccountPanel({ account }: Props) {
           value={formatMoney(account.total_pnl)}
           className={`font-bold ${account.total_pnl >= 0 ? "pl-positive" : "pl-negative"}`}
         />
+        <Row
+          label="Realized P/L"
+          value={formatMoney(account.realized_pnl)}
+          className={account.realized_pnl >= 0 ? "pl-positive" : "pl-negative"}
+        />
+        <Row
+          label="Unrealized P/L"
+          value={formatMoney(account.unrealized_pnl)}
+          className={account.unrealized_pnl >= 0 ? "pl-positive" : "pl-negative"}
+        />
         <div className="my-1.5 border-t border-border" />
         <Row label="Cash" value={formatMoney(account.cash)} />
         <Row label="Buying Power" value={formatMoney(account.buying_power)} />
