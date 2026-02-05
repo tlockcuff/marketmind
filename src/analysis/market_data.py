@@ -1,16 +1,39 @@
+import functools
 import logging
+import time
 from datetime import datetime, timedelta
 from typing import Optional
 
 import pandas as pd
 import yfinance as yf
 from alpaca.data import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
+from alpaca.data.requests import StockBarsRequest, StockSnapshotRequest
 from alpaca.data.timeframe import TimeFrame
 
 from config import settings
 
 logger = logging.getLogger(__name__)
+
+
+def retry_api_call(max_retries=3, base_delay=1.0, exceptions=(Exception,)):
+    """Decorator: retry with exponential backoff for transient API failures."""
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            last_exception = None
+            for attempt in range(max_retries):
+                try:
+                    return func(*args, **kwargs)
+                except exceptions as e:
+                    last_exception = e
+                    if attempt < max_retries - 1:
+                        delay = base_delay * (2 ** attempt)
+                        logger.warning(f"retry {func.__name__} attempt {attempt+1} failed: {e}, retrying in {delay:.1f}s")
+                        time.sleep(delay)
+            logger.error(f"{func.__name__} failed after {max_retries} attempts: {last_exception}")
+            return None
+        return wrapper
+    return decorator
 
 
 class MarketDataFetcher:
@@ -21,6 +44,11 @@ class MarketDataFetcher:
                 settings.ALPACA_API_KEY,
                 settings.ALPACA_SECRET_KEY,
             )
+        # Market context caching
+        self._market_context_cache = None
+        self._market_context_time = None
+        self._market_regime_cache = None
+        self._market_regime_time = None
 
     def get_bars(
         self,
@@ -38,6 +66,7 @@ class MarketDataFetcher:
             logger.info(f"Got {len(df)} bars for {ticker}")
         return df
 
+    @retry_api_call(max_retries=2, base_delay=1.0)
     def _fetch_alpaca(
         self,
         ticker: str,
@@ -46,60 +75,53 @@ class MarketDataFetcher:
     ) -> Optional[pd.DataFrame]:
         if not self.alpaca_client:
             return None
-        try:
-            tf_map = {
-                "1m": TimeFrame.Minute,
-                "5m": TimeFrame(5, "Min"),
-                "15m": TimeFrame(15, "Min"),
-                "1h": TimeFrame.Hour,
-                "1d": TimeFrame.Day,
-            }
-            tf = tf_map.get(timeframe, TimeFrame.Day)
-            end = datetime.now()
-            start = end - timedelta(days=days)
-            request = StockBarsRequest(
-                symbol_or_symbols=ticker,
-                timeframe=tf,
-                start=start,
-                end=end,
-            )
-            bars = self.alpaca_client.get_stock_bars(request)
-            df = bars.df
-            if ticker in df.index.get_level_values(0):
-                df = df.loc[ticker]
-            df = df.reset_index()
-            df.columns = [c.lower() for c in df.columns]
-            return df
-        except Exception as e:
-            logger.warning(f"Alpaca fetch failed for {ticker}: {e}")
-            return None
+        tf_map = {
+            "1m": TimeFrame.Minute,
+            "5m": TimeFrame(5, "Min"),
+            "15m": TimeFrame(15, "Min"),
+            "1h": TimeFrame.Hour,
+            "1d": TimeFrame.Day,
+        }
+        tf = tf_map.get(timeframe, TimeFrame.Day)
+        end = datetime.now()
+        start = end - timedelta(days=days)
+        request = StockBarsRequest(
+            symbol_or_symbols=ticker,
+            timeframe=tf,
+            start=start,
+            end=end,
+        )
+        bars = self.alpaca_client.get_stock_bars(request)
+        df = bars.df
+        if ticker in df.index.get_level_values(0):
+            df = df.loc[ticker]
+        df = df.reset_index()
+        df.columns = [c.lower() for c in df.columns]
+        return df
 
+    @retry_api_call(max_retries=2, base_delay=1.0)
     def _fetch_yfinance(
         self,
         ticker: str,
         days: int,
         timeframe: str,
     ) -> Optional[pd.DataFrame]:
-        try:
-            interval_map = {
-                "1m": "1m",
-                "5m": "5m",
-                "15m": "15m",
-                "1h": "1h",
-                "1d": "1d",
-            }
-            interval = interval_map.get(timeframe, "1d")
-            period = f"{days}d" if days <= 60 else f"{days // 30}mo"
-            if interval in ["1m", "5m", "15m"] and days > 7:
-                period = "7d"
-            stock = yf.Ticker(ticker)
-            df = stock.history(period=period, interval=interval)
-            df = df.reset_index()
-            df.columns = [c.lower() for c in df.columns]
-            return df
-        except Exception as e:
-            logger.warning(f"yfinance fetch failed for {ticker}: {e}")
-            return None
+        interval_map = {
+            "1m": "1m",
+            "5m": "5m",
+            "15m": "15m",
+            "1h": "1h",
+            "1d": "1d",
+        }
+        interval = interval_map.get(timeframe, "1d")
+        period = f"{days}d" if days <= 60 else f"{days // 30}mo"
+        if interval in ["1m", "5m", "15m"] and days > 7:
+            period = "7d"
+        stock = yf.Ticker(ticker)
+        df = stock.history(period=period, interval=interval)
+        df = df.reset_index()
+        df.columns = [c.lower() for c in df.columns]
+        return df
 
     def get_current_price(self, ticker: str) -> Optional[float]:
         """Get latest price for ticker."""
@@ -110,8 +132,88 @@ class MarketDataFetcher:
             logger.warning(f"Failed to get price for {ticker}: {e}")
             return None
 
+    def get_batch_prices(self, symbols: list[str]) -> dict[str, float]:
+        """Fetch current prices for multiple symbols via Alpaca snapshot.
+
+        Args:
+            symbols: List of ticker symbols
+
+        Returns:
+            Dict mapping symbol to current price
+        """
+        prices = {}
+
+        # Try Alpaca batch snapshot first
+        if self.alpaca_client and symbols:
+            try:
+                # Alpaca limits to 200 symbols per request
+                request = StockSnapshotRequest(symbol_or_symbols=symbols[:200])
+                snapshots = self.alpaca_client.get_stock_snapshot(request)
+
+                for symbol, snap in (snapshots or {}).items():
+                    if snap and snap.latest_trade and snap.latest_trade.price:
+                        prices[symbol] = snap.latest_trade.price
+            except Exception as e:
+                logger.warning(f"Batch snapshot failed: {e}")
+
+        # Fallback to individual lookups for missing symbols
+        missing = set(symbols) - set(prices.keys())
+        for symbol in missing:
+            price = self.get_current_price(symbol)
+            if price:
+                prices[symbol] = price
+
+        return prices
+
+    def get_batch_quotes(self, symbols: list[str]) -> dict[str, dict]:
+        """Fetch full quote data for multiple symbols via Alpaca snapshot.
+
+        Args:
+            symbols: List of ticker symbols
+
+        Returns:
+            Dict mapping symbol to quote dict (price, bid, ask, volume, avg_volume)
+        """
+        quotes = {}
+
+        # Try Alpaca batch snapshot first
+        if self.alpaca_client and symbols:
+            try:
+                # Alpaca limits to 200 symbols per request
+                request = StockSnapshotRequest(symbol_or_symbols=symbols[:200])
+                snapshots = self.alpaca_client.get_stock_snapshot(request)
+
+                for symbol, snap in (snapshots or {}).items():
+                    if snap:
+                        quote = {
+                            "price": snap.latest_trade.price if snap.latest_trade else None,
+                            "bid": snap.latest_quote.bid_price if snap.latest_quote else None,
+                            "ask": snap.latest_quote.ask_price if snap.latest_quote else None,
+                            "volume": snap.daily_bar.volume if snap.daily_bar else None,
+                            "avg_volume": None,
+                        }
+                        quotes[symbol] = quote
+            except Exception as e:
+                logger.warning(f"Batch quotes failed: {e}")
+
+        # Fallback to individual lookups for missing symbols
+        missing = set(symbols) - set(quotes.keys())
+        for symbol in missing:
+            quote = self.get_quote(symbol)
+            if quote:
+                quotes[symbol] = quote
+
+        return quotes
+
     def get_market_context(self) -> Optional[str]:
         """Get broad market context: SPY/QQQ, VIX, sector ETFs."""
+        # Check cache (5-minute TTL)
+        now = time.time()
+        if (self._market_context_cache is not None and
+            self._market_context_time is not None and
+            now - self._market_context_time < 300):
+            return self._market_context_cache
+
         try:
             context_parts = []
             # Major indices
@@ -147,8 +249,14 @@ class MarketDataFetcher:
                 context_parts.append("Sectors: " + ", ".join(sector_moves))
 
             if context_parts:
-                return "CURRENT MARKET:\n" + "\n".join(context_parts)
-            return None
+                result = "CURRENT MARKET:\n" + "\n".join(context_parts)
+            else:
+                result = None
+
+            # Cache result
+            self._market_context_cache = result
+            self._market_context_time = time.time()
+            return result
         except Exception as e:
             logger.warning(f"Failed to get market context: {e}")
             return None
@@ -159,6 +267,13 @@ class MarketDataFetcher:
         Returns dict with 'regime' (trending_up, trending_down, choppy, high_volatility)
         and 'vix' level.
         """
+        # Check cache (5-minute TTL)
+        now = time.time()
+        if (self._market_regime_cache is not None and
+            self._market_regime_time is not None and
+            now - self._market_regime_time < 300):
+            return self._market_regime_cache
+
         result = {"regime": "choppy", "vix": None}
         try:
             # VIX
@@ -187,6 +302,9 @@ class MarketDataFetcher:
         except Exception as e:
             logger.warning(f"Failed to get market regime: {e}")
 
+        # Cache result
+        self._market_regime_cache = result
+        self._market_regime_time = time.time()
         return result
 
     def get_quote(self, ticker: str) -> Optional[dict]:
