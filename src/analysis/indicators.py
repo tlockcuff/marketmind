@@ -34,6 +34,7 @@ class IndicatorResult:
     stochastic_k: float
     stochastic_d: float
     stochastic_signal: str
+    current_price: Optional[float] = None
 
 
 def calculate_indicators(df: pd.DataFrame) -> Optional[IndicatorResult]:
@@ -132,6 +133,7 @@ def calculate_indicators(df: pd.DataFrame) -> Optional[IndicatorResult]:
             stochastic_k=stoch_k,
             stochastic_d=stoch_d,
             stochastic_signal=stoch_signal,
+            current_price=float(current_price),
         )
     except Exception as e:
         logger.error(f"Indicator calculation failed: {e}", exc_info=True)
@@ -257,8 +259,8 @@ def get_technical_alignment_score(indicators: IndicatorResult, direction: str) -
     # Bollinger gradient: continuous %B
     bb_range = indicators.bollinger_upper - indicators.bollinger_lower
     if bb_range > 0:
-        pct_b = (indicators.bollinger_middle - indicators.bollinger_lower) / bb_range
-        # Recalculate with actual price position (using stored values)
+        price_for_bb = indicators.current_price if indicators.current_price else indicators.bollinger_middle
+        pct_b = (price_for_bb - indicators.bollinger_lower) / bb_range
         # For buy: lower %B = more bullish (oversold bounce)
         if is_buy:
             score += _lerp(pct_b, 0, 1, 12, -6)  # near lower band = +12, near upper = -6
