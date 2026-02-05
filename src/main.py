@@ -106,6 +106,7 @@ class TradingBot:
         self._owned_symbols: set = set()  # Cache of owned symbols for quick lookup
         self._current_regime: str = "choppy"  # Market regime
         self._recovery_timestamp: datetime | None = None  # Last recovery time
+        self._profit_locked: bool = False  # True when daily target reached
 
         # Options components (check config override, not just default)
         self.options_enabled = settings.get("options_enabled")
@@ -325,18 +326,33 @@ class TradingBot:
                 time.sleep(60)
 
     def _check_daily_target(self):
-        """Log daily target progress. Keep trading past target."""
+        """Log daily target progress and enable profit lock mode when target reached."""
         target = settings.get_daily_target()
         if not target:
+            self._profit_locked = False
             return
         account = self.alpaca.get_account()
         if not account:
             return
         equity = account.get("equity", 0)
         daily_pl = equity - self.risk_mgr.daily_stats.starting_equity
+
         if daily_pl >= target:
-            logger.info(f"DAILY TARGET ${target:,.0f} REACHED! P/L: ${daily_pl:+,.0f}. Continuing.")
+            # Activate profit lock mode
+            if not self._profit_locked:
+                logger.info(f"DAILY TARGET REACHED! Enabling profit lock mode.")
+                self.discord.alert(
+                    "DAILY TARGET REACHED",
+                    f"P/L: ${daily_pl:+,.0f} / ${target:,.0f}. Profit lock mode enabled: tighter stops (1.5%) and smaller sizes (50%).",
+                    "info"
+                )
+            self._profit_locked = True
         else:
+            # Deactivate profit lock with hysteresis (90% of target)
+            if self._profit_locked and daily_pl < target * 0.90:
+                logger.info(f"Daily P/L dropped below 90% of target. Disabling profit lock mode.")
+                self._profit_locked = False
+
             logger.info(f"Daily target progress: ${daily_pl:+,.0f} / ${target:,.0f}")
 
     def _trading_cycle(self):
@@ -762,6 +778,11 @@ class TradingBot:
         # High-score oversize: 1.2x for scores 80+
         if score.total_score >= 80:
             qty = max(1, int(qty * 1.2))
+
+        # Apply profit lock: reduce position size
+        if self._profit_locked:
+            qty = max(1, int(qty * 0.50))
+            logger.info(f"{ticker}: profit lock active, reducing size to {qty} (50% of normal)")
 
         if qty < 1:
             logger.info(f"Position size too small for {ticker}")
