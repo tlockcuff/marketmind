@@ -107,6 +107,7 @@ class TradingBot:
         self._current_regime: str = "choppy"  # Market regime
         self._recovery_timestamp: datetime | None = None  # Last recovery time
         self._profit_locked: bool = False  # True when daily target reached
+        self._earnings_cache_date: datetime.date | None = None  # Last earnings cache clear date
 
         # Options components (check config override, not just default)
         self.options_enabled = settings.get("options_enabled")
@@ -359,6 +360,13 @@ class TradingBot:
         """Single trading cycle."""
         logger.info("=== Starting trading cycle ===")
         self.ticker_blacklist.clear()
+
+        # Clear earnings cache daily
+        from src.signals.earnings_filter import clear_cache as clear_earnings_cache
+        today = datetime.now().date()
+        if self._earnings_cache_date != today:
+            clear_earnings_cache()
+            self._earnings_cache_date = today
 
         # 0. Determine market regime
         regime_info = self.market_data.get_market_regime()
@@ -764,6 +772,12 @@ class TradingBot:
         """Execute a trade."""
         ticker = signal.ticker
 
+        # Check for upcoming earnings
+        from src.signals.earnings_filter import has_upcoming_earnings
+        earnings_reduction = has_upcoming_earnings(ticker)
+        if earnings_reduction:
+            logger.warning(f"{ticker}: earnings imminent, will reduce position size by 75%")
+
         # Determine trade strategy (day trade vs swing trade)
         trade_strategy = self.risk_mgr.get_trade_strategy(score.total_score)
         can_dt, dt_reason = self.risk_mgr.can_day_trade(score.total_score)
@@ -782,7 +796,11 @@ class TradingBot:
         # Apply profit lock: reduce position size
         if self._profit_locked:
             qty = max(1, int(qty * 0.50))
-            logger.info(f"{ticker}: profit lock active, reducing size to {qty} (50% of normal)")
+
+        # Apply earnings reduction: 75% reduction (keep 25%)
+        if earnings_reduction:
+            qty = max(1, int(qty * 0.25))
+            logger.info(f"{ticker}: earnings reduction applied, size reduced to {qty} (25% of normal)")
 
         if qty < 1:
             logger.info(f"Position size too small for {ticker}")
