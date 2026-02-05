@@ -342,6 +342,7 @@ class TradingBot:
     def _trading_cycle(self):
         """Single trading cycle."""
         logger.info("=== Starting trading cycle ===")
+        self.ticker_blacklist.clear()
 
         # 0. Determine market regime
         regime_info = self.market_data.get_market_regime()
