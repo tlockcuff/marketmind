@@ -194,6 +194,51 @@ class RiskManager:
         else:
             self.daily_stats.losses += 1
 
+    def get_win_rate_multiplier(self) -> float:
+        """Calculate position size multiplier based on rolling 20-trade win rate.
+
+        Returns:
+            - 0.50 if win_rate < 40% (halve position sizes on cold streaks)
+            - 1.25 if win_rate > 60% (increase 25% on hot streaks)
+            - 1.0 otherwise (normal sizing)
+        """
+        try:
+            import os
+            mode = os.getenv("TRADING_MODE", "paper")
+
+            with get_db() as conn:
+                rows = conn.execute(
+                    """SELECT pnl FROM trades
+                       WHERE mode = %s
+                       AND status != 'open'
+                       AND pnl IS NOT NULL
+                       ORDER BY exit_time DESC
+                       LIMIT 20""",
+                    (mode,)
+                ).fetchall()
+
+                # Need at least 5 closed trades for meaningful win rate
+                if len(rows) < 5:
+                    return 1.0
+
+                wins = sum(1 for row in rows if float(row[0]) > 0)
+                win_rate = wins / len(rows)
+
+                if win_rate < 0.40:
+                    multiplier = 0.50
+                    logger.info(f"Win rate {win_rate:.1%} < 40% → position size 0.5x (cold streak)")
+                    return multiplier
+                elif win_rate > 0.60:
+                    multiplier = 1.25
+                    logger.info(f"Win rate {win_rate:.1%} > 60% → position size 1.25x (hot streak)")
+                    return multiplier
+                else:
+                    return 1.0
+
+        except Exception as e:
+            logger.warning(f"Failed to calculate win rate multiplier: {e}")
+            return 1.0  # Fail-open with normal sizing
+
     def get_daily_summary(self) -> dict:
         """Get summary of today's trading."""
         self._init_daily_stats()

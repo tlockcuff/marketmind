@@ -104,6 +104,14 @@ class PositionManager:
                 multiplier *= 0.80
             # else: full size (stable)
 
+        # Win rate adjustment (adaptive position sizing based on recent performance)
+        try:
+            from src.trading.risk_mgr import RiskManager
+            wr_multiplier = RiskManager().get_win_rate_multiplier()
+            multiplier *= wr_multiplier
+        except Exception:
+            pass  # Fail silently, continue with current multiplier
+
         position_value = max_position_value * multiplier
 
         # Cap to available buying power (leave 10% buffer)
