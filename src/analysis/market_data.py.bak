@@ -125,22 +125,6 @@ class MarketDataFetcher:
 
     def get_current_price(self, ticker: str) -> Optional[float]:
         """Get latest price for ticker."""
-        # Try Alpaca snapshot first
-        if self.alpaca_client:
-            try:
-                request = StockSnapshotRequest(symbol_or_symbols=[ticker])
-                snapshots = self.alpaca_client.get_stock_snapshot(request)
-
-                # Handle both dict and direct snapshot return
-                snap = snapshots.get(ticker) if isinstance(snapshots, dict) else snapshots
-                if snap and snap.latest_trade and snap.latest_trade.price:
-                    return snap.latest_trade.price
-                else:
-                    logger.debug(f"Alpaca snapshot for {ticker} missing trade data, falling back to yfinance")
-            except Exception as e:
-                logger.debug(f"Alpaca snapshot failed for {ticker}: {e}, falling back to yfinance")
-
-        # Fallback to yfinance
         try:
             stock = yf.Ticker(ticker)
             return stock.info.get("regularMarketPrice") or stock.info.get("currentPrice")
@@ -325,28 +309,6 @@ class MarketDataFetcher:
 
     def get_quote(self, ticker: str) -> Optional[dict]:
         """Get current quote with bid/ask."""
-        # Try Alpaca snapshot first
-        if self.alpaca_client:
-            try:
-                request = StockSnapshotRequest(symbol_or_symbols=[ticker])
-                snapshots = self.alpaca_client.get_stock_snapshot(request)
-
-                # Handle both dict and direct snapshot return
-                snap = snapshots.get(ticker) if isinstance(snapshots, dict) else snapshots
-                if snap:
-                    return {
-                        "price": snap.latest_trade.price if snap.latest_trade else None,
-                        "bid": snap.latest_quote.bid_price if snap.latest_quote else None,
-                        "ask": snap.latest_quote.ask_price if snap.latest_quote else None,
-                        "volume": snap.daily_bar.volume if snap.daily_bar else None,
-                        "avg_volume": None,
-                    }
-                else:
-                    logger.debug(f"Alpaca snapshot for {ticker} returned no data, falling back to yfinance")
-            except Exception as e:
-                logger.debug(f"Alpaca snapshot failed for {ticker}: {e}, falling back to yfinance")
-
-        # Fallback to yfinance
         try:
             stock = yf.Ticker(ticker)
             info = stock.info
