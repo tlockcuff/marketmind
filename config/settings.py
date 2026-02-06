@@ -77,9 +77,9 @@ PAPER_PORTFOLIO_SIZE = 100_000 # 100,000 paper portfolio size
 # Risk parameters
 MAX_POSITION_PCT = 0.25 # 25% of equity per trade
 MAX_CONCURRENT_POSITIONS = 30 # 30 concurrent positions
-STOP_LOSS_PCT = 0.03 # 3% stop loss (tighter = less bleed)
+STOP_LOSS_PCT = 0.045 # 4.5% stop loss (fallback when ATR unavailable; 3% causes premature stop-outs)
 TAKE_PROFIT_PCT = 0.15 # 15% take profit (let winners run)
-DAILY_LOSS_LIMIT_PCT = 0.20 # 20% daily loss limit
+DAILY_LOSS_LIMIT_PCT = 0.08 # 8% daily loss limit (protects against catastrophic drawdowns)
 MIN_SCORE_THRESHOLD = 50 # 50% minimum score to trade
 SCAN_INTERVAL_MINUTES = 5 # 5 minutes between scans
 
@@ -100,7 +100,7 @@ SCORING_WEIGHTS = {
 
 # Time-based exits
 MAX_HOLD_HOURS = 24  # Force close after this hours
-STALE_POSITION_HOURS = 24  # Tighten stop to breakeven + 0.5%
+STALE_POSITION_HOURS = 10  # Tighten stop to breakeven + 0.5% (well before 24h force-close)
 
 # Backtest
 BACKTEST_DAYS = 90 # 90 days of backtest data
