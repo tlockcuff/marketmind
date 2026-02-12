@@ -712,15 +712,15 @@ class TradingBot:
 
         logger.info(f"{ticker} score: {score.total_score} ({score.action})")
 
-        # Apply market regime filter — volatile/trending = opportunity, lower threshold
+        # Apply market regime filter — volatile markets require HIGHER conviction
         regime = getattr(self, "_current_regime", "choppy")
         score_threshold = settings.get("min_score_threshold")
         if regime == "high_volatility":
-            score_threshold = 45  # vol = opportunity
+            score_threshold = max(score_threshold, 75)  # require high conviction in volatile markets
         elif regime == "trending_down":
-            score_threshold = 45  # shorts thrive here
+            score_threshold = max(score_threshold, 70)  # shorts need strong signals
         elif regime == "trending_up":
-            score_threshold = 45  # ride the wave
+            score_threshold = score_threshold  # use default threshold in uptrends
 
         # Resolve sector
         sector = get_sector(ticker, signal.sector)

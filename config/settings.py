@@ -75,12 +75,12 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 PAPER_PORTFOLIO_SIZE = 100_000 # 100,000 paper portfolio size
 
 # Risk parameters
-MAX_POSITION_PCT = 0.25 # 25% of equity per trade
-MAX_CONCURRENT_POSITIONS = 30 # 30 concurrent positions
+MAX_POSITION_PCT = 0.12 # 12% of equity per trade (reduced from 25% for safety)
+MAX_CONCURRENT_POSITIONS = 15 # 15 concurrent stock positions
 STOP_LOSS_PCT = 0.045 # 4.5% stop loss (fallback when ATR unavailable; 3% causes premature stop-outs)
 TAKE_PROFIT_PCT = 0.15 # 15% take profit (let winners run)
 DAILY_LOSS_LIMIT_PCT = 0.08 # 8% daily loss limit (protects against catastrophic drawdowns)
-MIN_SCORE_THRESHOLD = 50 # 50% minimum score to trade
+MIN_SCORE_THRESHOLD = 65 # 65% minimum score to trade (raised from 50 for quality)
 SCAN_INTERVAL_MINUTES = 5 # 5 minutes between scans
 
 # Recovery mode — close worst losers when buying power too low
@@ -127,11 +127,11 @@ OPTIONS_MIN_SCORE_SPREAD = 80 # 80% minimum score for spread options
 OPTIONS_PROFIT_TARGET_DIRECTIONAL = 0.50 # 50% profit target for directional options
 OPTIONS_STOP_LOSS_DIRECTIONAL = 0.50 # 50% stop loss for directional options
 OPTIONS_PROFIT_TARGET_SPREAD = 0.50   # close at 50% max profit
-OPTIONS_DTE_MIN = 0 # 0DTE enabled
+OPTIONS_DTE_MIN = 1 # 0DTE disabled by default (extreme gamma risk)
 OPTIONS_DTE_MAX = 14 # 14 days maximum DTE (shorter = more leverage)
 OPTIONS_DTE_MAX_SPREAD = 30 # 30 days maximum spread DTE
 OPTIONS_DTE_EXIT = 2 # 2 days minimum DTE exit
-OPTIONS_MAX_CONCURRENT = 20            # separate from stock limit
+OPTIONS_MAX_CONCURRENT = 10            # separate from stock limit (reduced from 20)
 OPTIONS_DELTA_RANGE = (0.40, 0.70) # wider delta range for more leverage
 OPTIONS_CC_DELTA_RANGE = (0.20, 0.30) # 20% minimum delta range for covered calls
 OPTIONS_MIN_OPEN_INTEREST = 100 # 100 minimum open interest
