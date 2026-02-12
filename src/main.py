@@ -768,9 +768,10 @@ class TradingBot:
                 signal.rationale,
             )
 
-    def _execute_trade(self, signal, score, current_price, indicators, sector: str = None):
+    def _execute_trade(self, signal, score, current_price, indicators, sector: str = None, signal_source: str = None):
         """Execute a trade."""
         ticker = signal.ticker
+        source = signal_source or getattr(signal, "signal_source", "grok")
 
         # Check for upcoming earnings
         from src.signals.earnings_filter import has_upcoming_earnings
@@ -842,7 +843,7 @@ class TradingBot:
             # Update owned symbols cache
             self._owned_symbols.add(ticker)
 
-            # Record trade with rationale
+            # Record trade with rationale and signal source attribution
             get_trade_history().record_open(
                 symbol=ticker,
                 direction=signal.direction,
@@ -862,6 +863,7 @@ class TradingBot:
                 },
                 sector=sector,
                 atr_at_entry=atr,
+                signal_source=source,
             )
 
             self.discord.trade_executed(

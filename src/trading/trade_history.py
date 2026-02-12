@@ -137,10 +137,14 @@ class TradeHistory:
         score_breakdown: dict,
         sector: str = None,
         atr_at_entry: float = None,
+        signal_source: str = "grok",
     ):
         """Record a new trade."""
         mode = _mode()
         now = datetime.now()
+        # Store signal_source in score_breakdown for attribution tracking
+        score_breakdown_with_source = dict(score_breakdown or {})
+        score_breakdown_with_source["signal_source"] = signal_source
         try:
             with get_db() as conn:
                 conn.execute(
@@ -150,7 +154,7 @@ class TradeHistory:
                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (mode, symbol, direction, qty, entry_price, now,
                      stop_loss, take_profit, score, grok_rationale,
-                     json.dumps(score_breakdown), sector, atr_at_entry),
+                     json.dumps(score_breakdown_with_source), sector, atr_at_entry),
                 )
                 conn.commit()
         except Exception as e:
@@ -163,7 +167,7 @@ class TradeHistory:
             "entry_price": entry_price, "entry_time": now.isoformat(),
             "stop_loss": stop_loss, "take_profit": take_profit,
             "score": score, "grok_rationale": grok_rationale,
-            "score_breakdown": score_breakdown, "status": "open",
+            "score_breakdown": score_breakdown_with_source, "status": "open",
             "sector": sector, "atr_at_entry": atr_at_entry,
             "asset_type": "stock", "opened_at": now.isoformat(),
             "trailing_stop_updates": 0, "scale_out_level": 0,
@@ -336,6 +340,73 @@ class TradeHistory:
         except Exception as e:
             logger.warning(f"Failed to get today stats: {e}")
             return {"trades": 0, "pnl": 0, "winners": 0, "losers": 0}
+
+
+    def get_performance_stats(self, lookback_days: int = 30) -> dict:
+        """Calculate win rate, profit factor, and per-source attribution stats."""
+        mode = _mode()
+        try:
+            with get_db() as conn:
+                rows = conn.execute(
+                    """SELECT pnl, score_breakdown
+                       FROM trades
+                       WHERE mode = %s AND status != 'open' AND pnl IS NOT NULL
+                             AND exit_time >= NOW() - INTERVAL '%s days'
+                       ORDER BY exit_time DESC""",
+                    (mode, lookback_days),
+                ).fetchall()
+
+                if not rows:
+                    return {"trades": 0, "win_rate": 0, "profit_factor": 0, "by_source": {}}
+
+                total = len(rows)
+                wins = 0
+                gross_profit = 0.0
+                gross_loss = 0.0
+                by_source: dict = {}
+
+                for r in rows:
+                    pnl = float(r[0])
+                    breakdown = r[1] or {}
+                    source = breakdown.get("signal_source", "unknown") if isinstance(breakdown, dict) else "unknown"
+
+                    if pnl > 0:
+                        wins += 1
+                        gross_profit += pnl
+                    else:
+                        gross_loss += abs(pnl)
+
+                    if source not in by_source:
+                        by_source[source] = {"trades": 0, "wins": 0, "pnl": 0.0, "gross_profit": 0.0, "gross_loss": 0.0}
+                    by_source[source]["trades"] += 1
+                    by_source[source]["pnl"] += pnl
+                    if pnl > 0:
+                        by_source[source]["wins"] += 1
+                        by_source[source]["gross_profit"] += pnl
+                    else:
+                        by_source[source]["gross_loss"] += abs(pnl)
+
+                # Calculate per-source metrics
+                for src_stats in by_source.values():
+                    src_stats["win_rate"] = (src_stats["wins"] / src_stats["trades"] * 100) if src_stats["trades"] else 0
+                    src_stats["profit_factor"] = (src_stats["gross_profit"] / src_stats["gross_loss"]) if src_stats["gross_loss"] > 0 else float('inf') if src_stats["gross_profit"] > 0 else 0
+
+                profit_factor = (gross_profit / gross_loss) if gross_loss > 0 else float('inf') if gross_profit > 0 else 0
+
+                return {
+                    "trades": total,
+                    "wins": wins,
+                    "losses": total - wins,
+                    "win_rate": wins / total * 100,
+                    "gross_profit": gross_profit,
+                    "gross_loss": gross_loss,
+                    "net_pnl": gross_profit - gross_loss,
+                    "profit_factor": profit_factor,
+                    "by_source": by_source,
+                }
+        except Exception as e:
+            logger.warning(f"Failed to get performance stats: {e}")
+            return {"trades": 0, "win_rate": 0, "profit_factor": 0, "by_source": {}}
 
 
 # Global instance

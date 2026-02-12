@@ -19,6 +19,7 @@ class TradeSignal:
     options_suitable: bool = False
     options_strategy: str = "none"  # "directional", "spread", "none"
     sector: Optional[str] = None
+    signal_source: str = "grok"  # "grok", "momentum", "congress", etc.
 
 
 def parse_grok_response(response_text: str) -> List[TradeSignal]:

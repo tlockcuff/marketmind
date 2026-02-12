@@ -137,6 +137,7 @@ class MomentumScreener:
                     sector=None,
                     options_suitable=current > 15,
                     options_strategy="directional" if abs(gap_pct) > 0.05 else "none",
+                    signal_source="momentum",
                 )
                 signals.append(signal)
 
