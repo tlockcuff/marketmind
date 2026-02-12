@@ -121,6 +121,15 @@ class OptionsPositionManager:
             logger.warning("Max options positions reached")
             return False
 
+        # Enforce minimum score for directional options (defense in depth)
+        min_score = settings.get("options_min_score_directional")
+        if score < min_score:
+            logger.warning(
+                f"Score {score:.0f} below options_min_score_directional ({min_score}) "
+                f"for {contract.symbol} — blocking entry"
+            )
+            return False
+
         limit_price = contract.mid or contract.ask or 0
         if limit_price <= 0:
             logger.warning(f"No price for {contract.symbol}")
@@ -193,6 +202,15 @@ class OptionsPositionManager:
         score: float,
     ) -> bool:
         if not self.can_open():
+            return False
+
+        # Enforce minimum score for spreads (defense in depth)
+        min_score = settings.get("options_min_score_spread")
+        if score < min_score:
+            logger.warning(
+                f"Score {score:.0f} below options_min_score_spread ({min_score}) "
+                f"for {short_contract.symbol} — blocking entry"
+            )
             return False
 
         short_price = short_contract.mid or short_contract.bid or 0

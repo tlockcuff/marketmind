@@ -1039,6 +1039,10 @@ class TradingBot:
 
         positions = self.alpaca.get_positions()
         for p in positions:
+            # Only scan equity positions — skip options/crypto
+            asset_class = p.get("asset_class", "us_equity")
+            if asset_class != "us_equity":
+                continue
             symbol = p["symbol"]
             qty = int(p["qty"])
             if qty < 100:
