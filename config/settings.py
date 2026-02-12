@@ -75,13 +75,13 @@ DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 PAPER_PORTFOLIO_SIZE = 100_000 # 100,000 paper portfolio size
 
 # Risk parameters
-MAX_POSITION_PCT = 0.12 # 12% of equity per trade (reduced from 25% for safety)
-MAX_CONCURRENT_POSITIONS = 15 # 15 concurrent stock positions
-STOP_LOSS_PCT = 0.045 # 4.5% stop loss (fallback when ATR unavailable; 3% causes premature stop-outs)
-TAKE_PROFIT_PCT = 0.15 # 15% take profit (let winners run)
+MAX_POSITION_PCT = 0.15 # 15% of equity per trade (fewer, larger swing positions)
+MAX_CONCURRENT_POSITIONS = 10 # 10 concurrent stock positions (fewer, larger)
+STOP_LOSS_PCT = 0.07 # 7% stop loss (wider for multi-day swing holds)
+TAKE_PROFIT_PCT = 0.20 # 20% take profit (swing trades target larger moves)
 DAILY_LOSS_LIMIT_PCT = 0.08 # 8% daily loss limit (protects against catastrophic drawdowns)
-MIN_SCORE_THRESHOLD = 65 # 65% minimum score to trade (raised from 50 for quality)
-SCAN_INTERVAL_MINUTES = 5 # 5 minutes between scans
+MIN_SCORE_THRESHOLD = 70 # 70% minimum score to trade (higher bar for fewer, better trades)
+SCAN_INTERVAL_MINUTES = 120 # 120 minutes between scans (swing trading doesn't need rapid scanning)
 
 # Recovery mode — close worst losers when buying power too low
 RECOVERY_BUYING_POWER_PCT = 0.10    # recover to 10% of equity free
@@ -99,8 +99,8 @@ SCORING_WEIGHTS = {
 }
 
 # Time-based exits
-MAX_HOLD_HOURS = 24  # Force close after this hours
-STALE_POSITION_HOURS = 10  # Tighten stop to breakeven + 0.5% (well before 24h force-close)
+MAX_HOLD_HOURS = 336  # Force close after 14 days (swing trading)
+STALE_POSITION_HOURS = 168  # Tighten stop to breakeven + 0.5% after 7 days
 
 # Backtest
 BACKTEST_DAYS = 90 # 90 days of backtest data
@@ -114,10 +114,10 @@ PAPER_TRADING_24_7 = TRADING_MODE == "paper"  # 24/7 only for paper
 
 # Day trade limits (PDT rule for accounts < $25k)
 # A day trade = buy AND sell same stock same day
-DAY_TRADE_LIMIT = 3  # Max day trades per 5-day rolling window (PDT rule)
+DAY_TRADE_LIMIT = 2  # Max day trades per 5-day rolling window (basically avoid day trading)
 PDT_EQUITY_THRESHOLD = 25_000  # Accounts above this are exempt from PDT
-MIN_SCORE_FOR_DAY_TRADE = 60  # Day trade more freely
-RESERVE_DAY_TRADES = 1  # Always keep 1 day trade for emergencies
+MIN_SCORE_FOR_DAY_TRADE = 95  # Basically never day trade unless exceptional setup
+RESERVE_DAY_TRADES = 2  # Reserve all day trades for emergencies
 
 # Options trading
 OPTIONS_ENABLED = True # Enable options trading
@@ -127,9 +127,9 @@ OPTIONS_MIN_SCORE_SPREAD = 80 # 80% minimum score for spread options
 OPTIONS_PROFIT_TARGET_DIRECTIONAL = 0.50 # 50% profit target for directional options
 OPTIONS_STOP_LOSS_DIRECTIONAL = 0.50 # 50% stop loss for directional options
 OPTIONS_PROFIT_TARGET_SPREAD = 0.50   # close at 50% max profit
-OPTIONS_DTE_MIN = 1 # 0DTE disabled by default (extreme gamma risk)
-OPTIONS_DTE_MAX = 14 # 14 days maximum DTE (shorter = more leverage)
-OPTIONS_DTE_MAX_SPREAD = 30 # 30 days maximum spread DTE
+OPTIONS_DTE_MIN = 7 # Minimum 7 DTE (no 0DTE/1DTE for swing trading)
+OPTIONS_DTE_MAX = 45 # 45 days maximum DTE (longer expiry for swing trades)
+OPTIONS_DTE_MAX_SPREAD = 60 # 60 days maximum spread DTE
 OPTIONS_DTE_EXIT = 2 # 2 days minimum DTE exit
 OPTIONS_MAX_CONCURRENT = 10            # separate from stock limit (reduced from 20)
 OPTIONS_DELTA_RANGE = (0.40, 0.70) # wider delta range for more leverage
@@ -197,9 +197,9 @@ EDITABLE_SETTINGS = {
     "max_concurrent_positions":  {"type": "int",   "min": 1,    "max": 100,  "label": "Max Positions",           "section": "Risk"},
     # Trading
     "min_score_threshold":       {"type": "int",   "min": 1,    "max": 100,  "label": "Min Score",               "section": "Trading"},
-    "scan_interval_minutes":     {"type": "int",   "min": 1,    "max": 60,   "label": "Scan Interval (min)",     "section": "Trading"},
-    "max_hold_hours":            {"type": "int",   "min": 1,    "max": 168,  "label": "Max Hold Hours",          "section": "Trading"},
-    "stale_position_hours":      {"type": "int",   "min": 1,    "max": 168,  "label": "Stale Position Hours",    "section": "Trading"},
+    "scan_interval_minutes":     {"type": "int",   "min": 1,    "max": 240,  "label": "Scan Interval (min)",     "section": "Trading"},
+    "max_hold_hours":            {"type": "int",   "min": 1,    "max": 720,  "label": "Max Hold Hours",          "section": "Trading"},
+    "stale_position_hours":      {"type": "int",   "min": 1,    "max": 720,  "label": "Stale Position Hours",    "section": "Trading"},
     "allow_short_selling":       {"type": "bool",                             "label": "Allow Short Selling",     "section": "Trading"},
     "backtest_days":             {"type": "int",   "min": 7,    "max": 365,  "label": "Backtest Days",           "section": "Trading"},
     "min_hold_minutes":          {"type": "int",   "min": 0,    "max": 120,  "label": "Min Hold Minutes",        "section": "Trading"},

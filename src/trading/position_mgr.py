@@ -286,24 +286,24 @@ class PositionManager:
                     gain_pct = (pos.entry_price - price) / pos.entry_price
                 orig_qty = pos.original_qty or pos.qty
 
-                # Level 1: +3% → sell 25%, move stop to breakeven
-                if pos.scale_out_level == 0 and gain_pct >= 0.03:
+                # Level 1: +5% → sell 25%, move stop to breakeven
+                if pos.scale_out_level == 0 and gain_pct >= 0.05:
                     sell_qty = max(1, int(orig_qty * 0.25))
                     if sell_qty < pos.qty:
-                        if self._partial_close(symbol, sell_qty, "scale_out_3pct"):
+                        if self._partial_close(symbol, sell_qty, "scale_out_5pct"):
                             pos.scale_out_level = 1
                             self.update_stop_loss(symbol, pos.entry_price)
                             logger.info(f"{symbol} scale-out L1: sold {sell_qty}, stop→breakeven")
 
-                # Level 2: +6% → sell another 25% of original, tighten trail
-                elif pos.scale_out_level == 1 and gain_pct >= 0.06:
+                # Level 2: +12% → sell another 25% of original, lock stop at +5%
+                elif pos.scale_out_level == 1 and gain_pct >= 0.12:
                     sell_qty = max(1, int(orig_qty * 0.25))
                     if sell_qty < pos.qty:
-                        if self._partial_close(symbol, sell_qty, "scale_out_6pct"):
+                        if self._partial_close(symbol, sell_qty, "scale_out_12pct"):
                             pos.scale_out_level = 2
-                            lock_stop = pos.entry_price * (1.03 if pos.direction in ("buy", "long") else 0.97)
+                            lock_stop = pos.entry_price * (1.05 if pos.direction in ("buy", "long") else 0.95)
                             self.update_stop_loss(symbol, lock_stop)
-                            logger.info(f"{symbol} scale-out L2: sold {sell_qty}, stop→+3%")
+                            logger.info(f"{symbol} scale-out L2: sold {sell_qty}, stop→+5%")
 
                 # Level 3: remainder rides trailing stop — no forced close
                 # (trailing stop in _check_positions handles final exit)

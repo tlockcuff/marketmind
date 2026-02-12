@@ -148,7 +148,7 @@ class RiskManager:
         entry_price: float,
         direction: str,
         stop_loss: float = None,
-        risk_reward: float = 2.5,
+        risk_reward: float = 3.0,
     ) -> float:
         """Calculate take profit price."""
         if stop_loss:
@@ -170,12 +170,12 @@ class RiskManager:
         current_price: float,
         current_stop: float,
         direction: str,
-        trail_pct: float = 0.02,
+        trail_pct: float = 0.04,
         atr: float = None,
     ) -> float:
         """Calculate trailing stop. Uses ATR-based trail if atr provided."""
         if atr and current_price > 0:
-            trail_pct = max(0.015, min(0.05, 1.5 * atr / current_price))
+            trail_pct = max(0.025, min(0.08, 1.5 * atr / current_price))
 
         if direction in ("buy", "long"):
             new_stop = current_price * (1 - trail_pct)

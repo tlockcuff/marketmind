@@ -115,7 +115,7 @@ class MomentumScreener:
                     continue
 
                 # Only trade significant gaps
-                if abs(gap_pct) < 0.03:
+                if abs(gap_pct) < 0.05:
                     continue
 
                 # Spread check: skip wide-spread stocks (>0.5% of price)
@@ -133,17 +133,17 @@ class MomentumScreener:
                     continue
 
                 direction = "buy" if gap_pct > 0 else "sell"
-                confidence = min(90, 60 + abs(gap_pct) * 200)  # scale by gap size
+                confidence = min(90, 50 + abs(gap_pct) * 200)  # scale by gap size (less aggressive start)
 
-                # Entry/stop/target
+                # Entry/stop/target (wider for swing trading)
                 if direction == "buy":
                     entry = current
-                    stop = current * 0.97
-                    target = current * 1.10
+                    stop = current * 0.95   # 5% stop
+                    target = current * 1.15  # 15% target
                 else:
                     entry = current
-                    stop = current * 1.03
-                    target = current * 0.90
+                    stop = current * 1.05   # 5% stop
+                    target = current * 0.88  # 12% target
 
                 signal = TradeSignal(
                     ticker=symbol,
@@ -152,7 +152,7 @@ class MomentumScreener:
                     entry_price=entry,
                     stop_loss=stop,
                     take_profit=target,
-                    rationale=f"Momentum screener: {gap_pct:+.1%} gap, vol={today_vol:,}",
+                    rationale=f"Momentum screener (potential swing entry): {gap_pct:+.1%} gap, vol={today_vol:,}",
                     sector=None,
                     options_suitable=current > 15,
                     options_strategy="directional" if abs(gap_pct) > 0.05 else "none",

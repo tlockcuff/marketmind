@@ -104,16 +104,16 @@ def should_avoid_trading() -> tuple[bool, str]:
 
     now = now_et()
 
-    # Avoid first 15 minutes (high volatility)
-    first_15 = now.replace(hour=9, minute=45, second=0)
-    if now.time() < first_15.time():
-        return True, "First 15 minutes"
+    # Swing trading: only avoid first 5 minutes (let opening price establish)
+    first_5 = now.replace(hour=9, minute=35, second=0)
+    if now.time() < first_5.time():
+        return True, "First 5 minutes (waiting for open to settle)"
 
-    # Avoid last 15 minutes (closing volatility)
+    # Swing trading: only avoid last 5 minutes (avoid MOC volatility)
     close_time = EARLY_CLOSE if now.date() in EARLY_CLOSE_DAYS else MARKET_CLOSE
     close_dt = now.replace(hour=close_time.hour, minute=close_time.minute)
-    if (close_dt - now).total_seconds() < 900:
-        return True, "Last 15 minutes"
+    if (close_dt - now).total_seconds() < 300:
+        return True, "Last 5 minutes"
 
     return False, ""
 
