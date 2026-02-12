@@ -15,6 +15,7 @@ import xml.etree.ElementTree as ET
 from collections import Counter
 from dataclasses import dataclass, asdict
 from datetime import datetime, timedelta
+from src.utils import utcnow
 from typing import List, Optional
 
 import requests
@@ -236,7 +237,7 @@ class CongressClient:
     def _scrape_capitol_trades(self) -> List[CongressTrade]:
         """Scrape capitoltrades.com HTML tables (Senate + House)."""
         trades: List[CongressTrade] = []
-        cutoff = datetime.now() - timedelta(days=settings.CONGRESS_LOOKBACK_DAYS)
+        cutoff = utcnow() - timedelta(days=settings.CONGRESS_LOOKBACK_DAYS)
 
         for page in range(1, 6):  # up to 5 pages
             resp = self.session.get(
@@ -351,7 +352,7 @@ class CongressClient:
         text = text.replace("\n", " ").strip()
         # Handle "14:05Yesterday" or similar
         if "yesterday" in text.lower() or "today" in text.lower():
-            return datetime.now().strftime("%Y-%m-%d")
+            return utcnow().strftime("%Y-%m-%d")
 
         # Try "29 Dec2025" or "29 Dec 2025"
         m = re.search(r'(\d{1,2})\s*([A-Za-z]{3})\s*(\d{4})', text)
@@ -369,7 +370,7 @@ class CongressClient:
     def _scrape_house_xml(self) -> List[CongressTrade]:
         """Parse House Clerk XML for PTR filings, then fetch PDFs for details."""
         trades: List[CongressTrade] = []
-        year = datetime.now().year
+        year = utcnow().year
         url = f"https://disclosures-clerk.house.gov/public_disc/financial-pdfs/{year}FD.xml"
 
         resp = self.session.get(url, timeout=20)
@@ -380,7 +381,7 @@ class CongressClient:
         text = resp.content.decode("utf-8-sig")
         root = ET.fromstring(text)
 
-        cutoff = datetime.now() - timedelta(days=settings.CONGRESS_LOOKBACK_DAYS)
+        cutoff = utcnow() - timedelta(days=settings.CONGRESS_LOOKBACK_DAYS)
         ptrs = []
         for member in root.findall("Member"):
             filing_type = (member.find("FilingType").text or "").strip()
@@ -515,7 +516,7 @@ class CongressClient:
                 if not row:
                     return False
                 ttl = timedelta(hours=settings.CONGRESS_CACHE_TTL_HOURS)
-                return datetime.now(row[0].tzinfo) - row[0] < ttl if row[0].tzinfo else datetime.now() - row[0] < ttl
+                return utcnow() - row[0] < ttl if row[0].tzinfo else utcnow() - row[0] < ttl
         except Exception:
             return False
 

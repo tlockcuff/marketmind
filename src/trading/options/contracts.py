@@ -3,6 +3,7 @@
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timedelta
+from src.utils import utcnow
 from typing import Optional, Tuple
 
 from alpaca.trading.client import TradingClient
@@ -252,7 +253,7 @@ class ContractSelector:
     ) -> list[OptionContract]:
         """Fetch option chain from Alpaca and return parsed contracts."""
         try:
-            now = datetime.now()
+            now = utcnow()
             # 0DTE: use today's date as minimum
             exp_min = (now + timedelta(days=max(0, dte_min))).strftime("%Y-%m-%d")
             exp_max = (now + timedelta(days=dte_max)).strftime("%Y-%m-%d")

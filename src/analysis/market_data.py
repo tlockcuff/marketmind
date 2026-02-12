@@ -2,6 +2,7 @@ import functools
 import logging
 import time
 from datetime import datetime, timedelta
+from src.utils import utcnow
 from typing import Optional
 
 import pandas as pd
@@ -83,7 +84,7 @@ class MarketDataFetcher:
             "1d": TimeFrame.Day,
         }
         tf = tf_map.get(timeframe, TimeFrame.Day)
-        end = datetime.now()
+        end = utcnow()
         start = end - timedelta(days=days)
         request = StockBarsRequest(
             symbol_or_symbols=ticker,

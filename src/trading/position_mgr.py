@@ -2,6 +2,7 @@ import logging
 from typing import Optional, List
 from dataclasses import dataclass, field
 from datetime import datetime
+from src.utils import utcnow, ensure_aware
 
 from config import settings
 from config.sectors import MAX_PER_SECTOR
@@ -49,7 +50,7 @@ class PositionManager:
                     symbol=p["symbol"],
                     qty=p["qty"],
                     entry_price=p["avg_entry"],
-                    entry_time=datetime.now(),
+                    entry_time=utcnow(),
                     stop_loss=p["avg_entry"] * (1 - settings.get("stop_loss_pct")),
                     take_profit=p["avg_entry"] * (1 + settings.get("take_profit_pct")),
                     direction="buy" if p["qty"] > 0 else "sell",
@@ -175,7 +176,7 @@ class PositionManager:
                 symbol=symbol,
                 qty=qty,
                 entry_price=entry_price,
-                entry_time=datetime.now(),
+                entry_time=utcnow(),
                 stop_loss=stop_loss,
                 take_profit=take_profit,
                 direction=direction,
@@ -251,7 +252,7 @@ class PositionManager:
     def check_exits(self, current_prices: dict) -> List[str]:
         """Check all positions for exit conditions. Returns closed symbols."""
         closed = []
-        now = datetime.now()
+        now = utcnow()
 
         for symbol, pos in list(self.positions.items()):
             price = current_prices.get(symbol)

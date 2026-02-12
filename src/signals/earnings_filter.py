@@ -6,6 +6,7 @@ earnings-related volatility.
 
 import logging
 from datetime import datetime, timedelta, date
+from src.utils import utcnow
 from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
@@ -22,7 +23,7 @@ def has_upcoming_earnings(symbol: str) -> bool:
         True if earnings are imminent (today or tomorrow)
         False otherwise (or on check failure - fail-open design)
     """
-    now = datetime.now()
+    now = utcnow()
 
     # Check cache first
     if symbol in _earnings_cache:
@@ -103,7 +104,7 @@ def _check_earnings_yfinance(symbol: str) -> bool:
             return False
 
         # Compare to today and tomorrow
-        today = datetime.now().date()
+        today = utcnow().date()
         tomorrow = today + timedelta(days=1)
 
         if earnings_date in (today, tomorrow):

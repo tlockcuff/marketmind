@@ -12,6 +12,7 @@ import termios
 import threading
 import tty
 from datetime import datetime
+from src.utils import utcnow
 from pathlib import Path
 
 from rich.console import Console
@@ -131,7 +132,7 @@ class BotManager:
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
         )
-        self.start_time = datetime.now()
+        self.start_time = utcnow()
 
     def stop(self):
         if self.process and self.is_running():
@@ -145,7 +146,7 @@ class BotManager:
     def get_status(self) -> str:
         if not self.is_running():
             return "[red]STOPPED[/]"
-        uptime = datetime.now() - self.start_time
+        uptime = utcnow() - self.start_time
         mins = int(uptime.total_seconds() // 60)
         secs = int(uptime.total_seconds() % 60)
         return f"[green]RUNNING[/] [dim]{mins}:{secs:02d}[/]"
@@ -240,7 +241,7 @@ class Dashboard:
         if self.last_cycle_time:
             from datetime import timedelta
             next_at = self.last_cycle_time + timedelta(minutes=settings.SCAN_INTERVAL_MINUTES)
-            remaining = (next_at - datetime.now()).total_seconds()
+            remaining = (next_at - utcnow()).total_seconds()
             if remaining > 0:
                 m = int(remaining // 60)
                 s = int(remaining % 60)
@@ -266,7 +267,7 @@ class Dashboard:
                 try:
                     ts = line.split("|")[0].strip()
                     t = datetime.strptime(ts, "%H:%M:%S").time()
-                    self.last_cycle_time = datetime.combine(datetime.now().date(), t)
+                    self.last_cycle_time = datetime.combine(utcnow().date(), t)
                 except (ValueError, IndexError):
                     pass
                 return

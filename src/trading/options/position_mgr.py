@@ -5,6 +5,7 @@ import logging
 import os
 from dataclasses import dataclass, asdict
 from datetime import datetime
+from src.utils import utcnow, ensure_aware
 from typing import List, Optional
 
 from config import settings
@@ -135,7 +136,7 @@ class OptionsPositionManager:
             strategy="directional",
             underlying=contract.underlying,
             contracts=[contract.symbol],
-            entry_time=datetime.now().isoformat(),
+            entry_time=utcnow().isoformat(),
             net_debit_credit=cost,
             max_loss=cost,
             max_profit=cost * 3,
@@ -169,7 +170,7 @@ class OptionsPositionManager:
             strategy="covered_call",
             underlying=contract.underlying,
             contracts=[contract.symbol],
-            entry_time=datetime.now().isoformat(),
+            entry_time=utcnow().isoformat(),
             net_debit_credit=-premium,
             max_loss=0,
             max_profit=premium,
@@ -215,7 +216,7 @@ class OptionsPositionManager:
             strategy="credit_spread",
             underlying=short_contract.underlying,
             contracts=[short_contract.symbol, long_contract.symbol],
-            entry_time=datetime.now().isoformat(),
+            entry_time=utcnow().isoformat(),
             net_debit_credit=-net_credit,
             max_loss=max_loss,
             max_profit=net_credit,
@@ -235,7 +236,7 @@ class OptionsPositionManager:
 
     def check_exits(self, get_option_price_fn) -> List[str]:
         closed = []
-        now = datetime.now()
+        now = utcnow()
 
         for key, pos in list(self.positions.items()):
             if pos.status != "open":
@@ -244,7 +245,7 @@ class OptionsPositionManager:
             should_close = False
             reason = ""
 
-            entry_dt = datetime.fromisoformat(pos.entry_time)
+            entry_dt = ensure_aware(datetime.fromisoformat(pos.entry_time))
             held_days = (now - entry_dt).days
 
             if pos.strategy == "directional":

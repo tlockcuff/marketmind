@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from datetime import datetime
+from src.utils import utcnow
 from dataclasses import dataclass
 from typing import Optional, List
 
@@ -141,7 +142,7 @@ class TradeHistory:
     ):
         """Record a new trade."""
         mode = _mode()
-        now = datetime.now()
+        now = utcnow()
         # Store signal_source in score_breakdown for attribution tracking
         score_breakdown_with_source = dict(score_breakdown or {})
         score_breakdown_with_source["signal_source"] = signal_source
@@ -179,7 +180,7 @@ class TradeHistory:
         if symbol not in self.trades:
             return
         mode = _mode()
-        now = datetime.now()
+        now = utcnow()
         trade = self.trades[symbol]
 
         if trade["direction"] == "buy":
@@ -258,7 +259,7 @@ class TradeHistory:
     ):
         """Record an options trade open."""
         mode = _mode()
-        now = datetime.now()
+        now = utcnow()
         try:
             with get_db() as conn:
                 conn.execute(
@@ -290,7 +291,7 @@ class TradeHistory:
         if symbol not in self.trades:
             return
         mode = _mode()
-        now = datetime.now()
+        now = utcnow()
         trade = self.trades[symbol]
         pnl = (exit_price - trade["entry_price"]) * trade["qty"] * 100
 
@@ -319,7 +320,7 @@ class TradeHistory:
     def get_today_stats(self) -> dict:
         """Get today's closed trade stats."""
         mode = _mode()
-        today = datetime.now().date()
+        today = utcnow().date()
         try:
             with get_db() as conn:
                 row = conn.execute(

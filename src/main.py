@@ -11,6 +11,7 @@ import os
 import sys
 import time
 from datetime import datetime
+from src.utils import utcnow, ensure_aware
 from config import settings
 from config.logging_config import setup_logging
 from src.signals.grok_client import GrokClient
@@ -126,7 +127,7 @@ class TradingBot:
         Factors: unrealized P/L (worst first), hold time (longest first),
         entry score (lowest first), scale-out level (already took profits).
         """
-        now = datetime.now()
+        now = utcnow()
         scored = []
         for p in positions:
             symbol = p["symbol"]
@@ -137,7 +138,7 @@ class TradingBot:
             # Get local position data for score/hold time
             # Untracked positions get worst-case defaults (stale + low conviction)
             local = self.position_mgr.positions.get(symbol)
-            hold_hours = (now - local.entry_time).total_seconds() / 3600 if local else 24
+            hold_hours = (now - ensure_aware(local.entry_time)).total_seconds() / 3600 if local else 24
             entry_score = local.score if local else 0
             scale_level = local.scale_out_level if local else 0
 
@@ -208,7 +209,7 @@ class TradingBot:
                 if account:
                     buying_power = account.get("buying_power", 0)
 
-        self._recovery_timestamp = datetime.now()
+        self._recovery_timestamp = utcnow()
 
         if closed_symbols:
             msg = "Closed: " + ", ".join(closed_symbols)
@@ -277,7 +278,7 @@ class TradingBot:
 
                 # Cooldown gate after recovery
                 if self._recovery_timestamp:
-                    elapsed = (datetime.now() - self._recovery_timestamp).total_seconds()
+                    elapsed = (utcnow() - self._recovery_timestamp).total_seconds()
                     cooldown = settings.get("recovery_cooldown_minutes") * 60
                     if elapsed < cooldown:
                         logger.info(f"Recovery cooldown: {cooldown - elapsed:.0f}s remaining")
@@ -363,7 +364,7 @@ class TradingBot:
 
         # Clear earnings cache daily
         from src.signals.earnings_filter import clear_cache as clear_earnings_cache
-        today = datetime.now().date()
+        today = utcnow().date()
         if self._earnings_cache_date != today:
             clear_earnings_cache()
             self._earnings_cache_date = today
@@ -553,7 +554,7 @@ class TradingBot:
                     except (ValueError, TypeError):
                         opened_at = None
                 if opened_at:
-                    hold_minutes = (datetime.now() - opened_at.replace(tzinfo=None)).total_seconds() / 60
+                    hold_minutes = (utcnow() - ensure_aware(opened_at)).total_seconds() / 60
                     min_hold = settings.get("min_hold_minutes")
                     if hold_minutes < min_hold:
                         logger.info(f"{ticker}: skip Grok exit, held only {hold_minutes:.0f}m (min {min_hold}m)")
