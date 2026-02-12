@@ -194,6 +194,34 @@ class RiskManager:
         else:
             self.daily_stats.losses += 1
 
+    @staticmethod
+    def get_win_rate_multiplier_static() -> float:
+        """Static version that queries DB directly without instantiating AlpacaClient."""
+        try:
+            import os
+            mode = os.getenv("TRADING_MODE", "paper")
+            with get_db() as conn:
+                rows = conn.execute(
+                    """SELECT pnl FROM trades
+                       WHERE mode = %s AND status != 'open' AND pnl IS NOT NULL
+                       ORDER BY exit_time DESC LIMIT 20""",
+                    (mode,)
+                ).fetchall()
+                if len(rows) < 5:
+                    return 1.0
+                wins = sum(1 for row in rows if float(row[0]) > 0)
+                win_rate = wins / len(rows)
+                if win_rate < 0.40:
+                    logger.info(f"Win rate {win_rate:.1%} < 40% → position size 0.5x")
+                    return 0.50
+                elif win_rate > 0.60:
+                    logger.info(f"Win rate {win_rate:.1%} > 60% → position size 1.25x")
+                    return 1.25
+                return 1.0
+        except Exception as e:
+            logger.warning(f"Failed to calculate win rate multiplier: {e}")
+            return 1.0
+
     def get_win_rate_multiplier(self) -> float:
         """Calculate position size multiplier based on rolling 20-trade win rate.
 

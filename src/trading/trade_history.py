@@ -93,7 +93,8 @@ class TradeHistory:
                               asset_type, option_details, sector, atr_at_entry,
                               trailing_stop_updates, scale_out_level
                        FROM trades WHERE mode = %s AND status != 'open'
-                       ORDER BY exit_time DESC""",
+                       ORDER BY exit_time DESC
+                       LIMIT 500""",
                     (mode,),
                 ).fetchall()
                 self.closed_trades = []
@@ -201,7 +202,10 @@ class TradeHistory:
         trade["exit_time"] = now.isoformat()
         trade["pnl"] = pnl
         self.trades.pop(symbol, None)
-        self.closed_trades.append(trade)
+        self.closed_trades.insert(0, trade)
+        # Keep in-memory closed trades bounded
+        if len(self.closed_trades) > 500:
+            self.closed_trades = self.closed_trades[:500]
 
     def record_rejected(
         self,
@@ -304,7 +308,9 @@ class TradeHistory:
         trade["exit_time"] = now.isoformat()
         trade["pnl"] = pnl
         self.trades.pop(symbol, None)
-        self.closed_trades.append(trade)
+        self.closed_trades.insert(0, trade)
+        if len(self.closed_trades) > 500:
+            self.closed_trades = self.closed_trades[:500]
 
     def get_today_stats(self) -> dict:
         """Get today's closed trade stats."""

@@ -107,7 +107,7 @@ class PositionManager:
         # Win rate adjustment (adaptive position sizing based on recent performance)
         try:
             from src.trading.risk_mgr import RiskManager
-            wr_multiplier = RiskManager().get_win_rate_multiplier()
+            wr_multiplier = RiskManager.get_win_rate_multiplier_static()
             multiplier *= wr_multiplier
         except Exception:
             pass  # Fail silently, continue with current multiplier

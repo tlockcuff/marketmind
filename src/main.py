@@ -1086,7 +1086,9 @@ class TradingBot:
         closed = self.options_position_mgr.check_exits(get_option_price)
         for key in closed:
             logger.info(f"Options position closed: {key}")
-            get_trade_history().record_option_close(key, 0, "exit_trigger")
+            # Get actual exit price instead of recording 0 (which makes all options show as losses)
+            exit_price = get_option_price(key) or 0
+            get_trade_history().record_option_close(key, exit_price, "exit_trigger")
 
     def _send_daily_summary(self):
         """Send end of day summary."""
