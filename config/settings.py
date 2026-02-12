@@ -122,7 +122,7 @@ RESERVE_DAY_TRADES = 1  # Always keep 1 day trade for emergencies
 # Options trading
 OPTIONS_ENABLED = True # Enable options trading
 OPTIONS_MAX_POSITION_PCT = 0.05       # 5% equity per options trade
-OPTIONS_MIN_SCORE_DIRECTIONAL = 50 # 50% minimum score for directional options
+OPTIONS_MIN_SCORE_DIRECTIONAL = 70 # 70% minimum score for directional options (higher than stocks — leverage needs conviction)
 OPTIONS_MIN_SCORE_SPREAD = 80 # 80% minimum score for spread options
 OPTIONS_PROFIT_TARGET_DIRECTIONAL = 0.50 # 50% profit target for directional options
 OPTIONS_STOP_LOSS_DIRECTIONAL = 0.50 # 50% stop loss for directional options

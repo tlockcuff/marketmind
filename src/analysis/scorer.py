@@ -195,17 +195,3 @@ def calculate_risk_reward_score(
     else:
         return 20
 
-
-def get_position_size_multiplier(score: float) -> float:
-    """
-    Return position size multiplier based on score.
-    Strong signals get full position, weaker get reduced.
-    """
-    if score >= 85:
-        return 1.0
-    elif score >= 75:
-        return 0.8
-    elif score >= 65:
-        return 0.5
-    else:
-        return 0.0  # don't trade

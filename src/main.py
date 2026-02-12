@@ -678,6 +678,16 @@ class TradingBot:
             self.ticker_blacklist.add(ticker)
             return
 
+        # Spread check: skip if bid-ask spread > 1%
+        if quote:
+            bid = quote.get("bid")
+            ask = quote.get("ask")
+            if bid and ask and bid > 0 and current_price > 0:
+                spread_pct = (ask - bid) / current_price
+                if spread_pct > 0.01:
+                    logger.info(f"Skipping {ticker}: wide spread {spread_pct:.2%} (bid={bid}, ask={ask})")
+                    return
+
         # Calculate indicators
         logger.info(f"{ticker}: running technical indicators...")
         indicators = calculate_indicators(df)
@@ -783,8 +793,7 @@ class TradingBot:
         trade_strategy = self.risk_mgr.get_trade_strategy(score.total_score)
         can_dt, dt_reason = self.risk_mgr.can_day_trade(score.total_score)
 
-        if not settings.is_paper_mode():
-            logger.info(f"{ticker} strategy: {trade_strategy} ({dt_reason})")
+        logger.info(f"{ticker} strategy: {trade_strategy} (can_dt={can_dt}, {dt_reason})")
 
         # Calculate position size (volatility-adjusted)
         atr = indicators.atr if indicators else None
@@ -823,6 +832,18 @@ class TradingBot:
         take_profit = self.risk_mgr.calculate_take_profit(
             current_price, signal.direction, stop_loss
         )
+
+        # Day trades get tighter take-profit (expect same-day exit)
+        if trade_strategy == "day_trade" and can_dt:
+            original_tp = take_profit
+            if signal.direction in ("buy", "long"):
+                tp_distance = take_profit - current_price
+                take_profit = current_price + tp_distance * 0.6
+            else:
+                tp_distance = current_price - take_profit
+                take_profit = current_price - tp_distance * 0.6
+            logger.info(f"{ticker} day_trade: tightened TP {original_tp:.2f} -> {take_profit:.2f}")
+
         logger.info(f"{ticker} entry={current_price:.2f} SL={stop_loss:.2f} TP={take_profit:.2f}")
 
         # Open position

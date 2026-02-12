@@ -38,9 +38,11 @@ class PositionManager:
         self._sync_positions()
 
     def _sync_positions(self):
-        """Sync with Alpaca positions."""
+        """Sync with Alpaca positions. Also clean up phantom local positions."""
         alpaca_positions = self.alpaca.get_positions()
+        alpaca_symbols = set()
         for p in alpaca_positions:
+            alpaca_symbols.add(p["symbol"])
             if p["symbol"] not in self.positions:
                 # Position exists in Alpaca but not tracked locally
                 self.positions[p["symbol"]] = Position(
@@ -53,6 +55,12 @@ class PositionManager:
                     direction="buy" if p["qty"] > 0 else "sell",
                     score=0,
                 )
+
+        # Clean up phantom positions: locally tracked but closed on Alpaca (bracket SL/TP hit)
+        phantom_symbols = [s for s in self.positions if s not in alpaca_symbols]
+        for symbol in phantom_symbols:
+            logger.info(f"Removing phantom position {symbol} (closed by broker/bracket order)")
+            self.positions.pop(symbol, None)
 
     def can_open_position(self) -> bool:
         """Check if we can open new position."""

@@ -179,7 +179,7 @@ class GrokClient:
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.8,
+                temperature=0.4,
                 max_tokens=6000,
             )
 
@@ -313,7 +313,7 @@ Is this trade still valid? Provide updated confidence (0-100) and any adjustment
                     {"role": "system", "content": SYSTEM_PROMPT},
                     {"role": "user", "content": prompt},
                 ],
-                temperature=0.7,
+                temperature=0.3,
                 max_tokens=4000,
             )
 

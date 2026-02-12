@@ -105,9 +105,28 @@ class MomentumScreener:
                 if snap.minute_bar and snap.minute_bar.volume:
                     today_vol = max(today_vol, snap.minute_bar.volume * 390)
 
+                # Volume ratio filter: require 1.5x previous day's volume
+                prev_vol = snap.previous_daily_bar.volume
+                if not prev_vol or prev_vol <= 0 or not today_vol or today_vol <= 0:
+                    continue
+                volume_ratio = today_vol / prev_vol
+                if volume_ratio < 1.5:
+                    logger.debug(f"{symbol}: low volume ratio {volume_ratio:.1f}x, skipping gap")
+                    continue
+
                 # Only trade significant gaps
                 if abs(gap_pct) < 0.03:
                     continue
+
+                # Spread check: skip wide-spread stocks (>0.5% of price)
+                if snap.latest_quote:
+                    bid = getattr(snap.latest_quote, 'bid_price', None) or getattr(snap.latest_quote, 'bp', None)
+                    ask = getattr(snap.latest_quote, 'ask_price', None) or getattr(snap.latest_quote, 'ap', None)
+                    if bid and ask and bid > 0:
+                        spread_pct = (ask - bid) / current
+                        if spread_pct > 0.005:
+                            logger.debug(f"{symbol}: wide spread {spread_pct:.2%}, skipping")
+                            continue
 
                 # Skip penny stocks
                 if current < 3:
