@@ -485,6 +485,72 @@ def get_analytics_data(date_range: str = "ALL") -> dict:
         return {"error": str(e)}
 
 
+def get_crypto_positions() -> list[dict]:
+    """Fetch open crypto positions from trades table with live prices."""
+    mode = _mode()
+    try:
+        with get_db() as conn:
+            rows = conn.execute(
+                """SELECT symbol, direction, qty, entry_price, pnl, entry_time,
+                          stop_loss, take_profit, score, status
+                   FROM trades
+                   WHERE mode = %s AND status = 'open'
+                         AND (asset_type = 'crypto' OR symbol LIKE '%%/USD')""",
+                (mode,),
+            ).fetchall()
+
+        if not rows:
+            return []
+
+        # Try to get live prices from Alpaca crypto snapshots
+        live_prices: dict[str, float] = {}
+        try:
+            from alpaca.data.historical.crypto import CryptoHistoricalDataClient
+            from alpaca.data.requests import CryptoSnapshotRequest
+
+            settings._resolve_alpaca_keys()
+            if _keys_configured():
+                crypto_client = CryptoHistoricalDataClient(
+                    settings.ALPACA_API_KEY, settings.ALPACA_SECRET_KEY
+                )
+                symbols = [r[0] for r in rows]
+                req = CryptoSnapshotRequest(symbol_or_symbols=symbols)
+                snapshots = crypto_client.get_crypto_snapshot(req)
+                for sym, snap in snapshots.items():
+                    if snap and snap.latest_trade:
+                        live_prices[sym] = float(snap.latest_trade.price)
+        except Exception:
+            pass
+
+        result = []
+        for r in rows:
+            symbol = r[0]
+            direction = r[1]
+            qty = float(r[2]) if r[2] else 0
+            entry_price = float(r[3]) if r[3] else 0
+            current_price = live_prices.get(symbol, entry_price)
+            multiplier = 1 if direction == "long" else -1
+            unrealized_pl = (current_price - entry_price) * qty * multiplier
+            unrealized_plpc = ((current_price - entry_price) / entry_price * multiplier) if entry_price else 0
+            score = float(r[8]) if r[8] else 0
+
+            result.append({
+                "symbol": symbol,
+                "qty": qty,
+                "avg_entry": entry_price,
+                "current_price": current_price,
+                "unrealized_pl": round(unrealized_pl, 2),
+                "unrealized_plpc": round(unrealized_plpc, 4),
+                "score": score,
+                "direction": direction or "long",
+                "name": symbol,
+            })
+
+        return result
+    except Exception as e:
+        return []
+
+
 def get_full_snapshot() -> dict:
     from datetime import datetime
     return {
@@ -499,6 +565,7 @@ def get_full_snapshot() -> dict:
         "status": get_status(),
         "history": get_trade_history_data(),
         "news": get_news(),
+        "crypto": get_crypto_positions(),
         "market_indices": get_market_indices(),
         "timestamp": datetime.now().isoformat(),
     }

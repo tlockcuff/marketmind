@@ -191,10 +191,23 @@ export interface AnalyticsData {
   metrics: AnalyticsMetrics;
 }
 
+export interface CryptoPosition {
+  symbol: string;
+  qty: number;
+  avg_entry: number;
+  current_price: number;
+  unrealized_pl: number;
+  unrealized_plpc: number;
+  score: number;
+  direction: string;
+  name: string;
+}
+
 export interface DashboardData {
   account: Account;
   positions: Position[];
   options: OptionsPosition[];
+  crypto?: CryptoPosition[];
   orders: Order[];
   stats: Stats;
   config: Config;

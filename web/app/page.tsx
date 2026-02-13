@@ -13,6 +13,7 @@ import { ApiUsagePanel } from "@/components/api-usage-panel";
 import { LogStream } from "@/components/log-stream";
 import { TargetPanel } from "@/components/target-panel";
 import { NewsPanel } from "@/components/news-panel";
+import { CryptoTable } from "@/components/crypto-table";
 import { GridLayout } from "@/components/grid-layout";
 import { AccountMgmtPanel } from "@/components/account-mgmt-panel";
 
@@ -23,6 +24,7 @@ export default function Dashboard() {
     () => ({
       positions: <PositionsTable positions={data?.positions ?? null} />,
       options: <OptionsTable options={data?.options ?? null} />,
+      crypto: <CryptoTable positions={data?.crypto ?? null} />,
       orders: <OrdersTable orders={data?.orders ?? null} />,
       account: <AccountPanel account={data?.account ?? null} />,
       target: <TargetPanel account={data?.account ?? null} />,
