@@ -1,10 +1,9 @@
 "use client";
 
-import { useWebSocket } from "@/hooks/use-websocket";
+import { useWebSocketData } from "@/components/websocket-provider";
 import { Header } from "@/components/header";
 import { Sidebar } from "@/components/layout/sidebar";
 import { MobileNav } from "@/components/layout/mobile-nav";
-import { cn } from "@/lib/utils";
 
 interface AppShellProps {
   children: React.ReactNode;
@@ -13,12 +12,12 @@ interface AppShellProps {
 }
 
 export function AppShell({ children, currentTab, onTabChange }: AppShellProps) {
-  const { data, connected } = useWebSocket();
+  const { data, connected } = useWebSocketData();
 
   return (
-    <div className="min-h-screen bg-background text-foreground">
-      {/* Header */}
-      <div className="border-b border-border">
+    <div className="min-h-screen bg-background text-foreground flex flex-col">
+      {/* Header — desktop only */}
+      <div className="hidden lg:block border-b border-border shrink-0">
         <Header
           status={data?.status ?? null}
           connected={connected}
@@ -27,28 +26,20 @@ export function AppShell({ children, currentTab, onTabChange }: AppShellProps) {
       </div>
 
       {/* Main layout */}
-      <div className="flex h-[calc(100vh-57px)]">
+      <div className="flex flex-1 min-h-0">
         {/* Desktop sidebar */}
-        <div className="hidden lg:block w-80 border-r border-border">
+        <div className="hidden lg:block w-80 shrink-0 border-r border-border overflow-y-auto">
           <Sidebar data={data} connected={connected} />
         </div>
 
         {/* Main content */}
-        <div className="flex-1 overflow-hidden">
-          <div className={cn(
-            "h-full overflow-auto",
-            // Add padding bottom on mobile for bottom nav
-            "pb-16 lg:pb-0"
-          )}>
-            {children}
-          </div>
+        <div className="flex-1 overflow-y-auto pb-20 lg:pb-0">
+          {children}
         </div>
       </div>
 
       {/* Mobile bottom navigation */}
-      <div className="lg:hidden">
-        <MobileNav currentTab={currentTab} onTabChange={onTabChange} />
-      </div>
+      <MobileNav currentTab={currentTab} onTabChange={onTabChange} />
     </div>
   );
 }

@@ -12,9 +12,16 @@ function formatMoney(n: number) {
   return n.toLocaleString("en-US", { 
     style: "currency", 
     currency: "USD", 
-    minimumFractionDigits: 0,
-    maximumFractionDigits: 0
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2
   });
+}
+
+function formatQty(qty: number) {
+  if (qty >= 100) return qty.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (qty >= 1) return qty.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (qty < 0.01) return qty.toFixed(6);
+  return qty.toLocaleString("en-US", { maximumFractionDigits: 4 });
 }
 
 function PositionCard({ 
@@ -38,35 +45,30 @@ function PositionCard({
   const textColor = isPositive ? "text-green-400" : "text-red-400";
 
   return (
-    <div className={`bg-card border rounded-sm p-4 ${borderColor} ${bgColor}`}>
-      <div className="space-y-3">
+    <div className={`bg-card border rounded-sm p-3 ${borderColor} ${bgColor}`}>
+      <div className="space-y-2">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <span className="font-bold text-foreground text-lg">{symbol}</span>
+          <div className="flex items-center gap-1.5">
+            <span className="font-bold text-foreground text-sm sm:text-base">{symbol}</span>
             {isCrypto && (
-              <span className="text-xs font-medium px-1.5 py-0.5 bg-purple-500/20 text-purple-400 rounded">
-                CRYPTO
+              <span className="text-[10px] font-medium px-1 py-0.5 bg-purple-500/20 text-purple-400 rounded">
+                C
               </span>
             )}
           </div>
-          <span className="text-xs text-muted-foreground">
-            {Math.abs(qty)} {qty > 0 ? "LONG" : "SHORT"}
+          <span className="text-[10px] text-muted-foreground">
+            {formatQty(Math.abs(qty))}
           </span>
         </div>
 
-        {/* Company name */}
-        <div className="text-sm text-muted-foreground truncate">
-          {name}
-        </div>
-
         {/* P/L Display */}
-        <div className="space-y-1">
-          <div className={`text-xl font-bold ${textColor}`}>
+        <div>
+          <div className={`text-lg font-bold ${textColor}`}>
             {formatMoney(unrealized_pl)}
           </div>
-          <div className={`text-sm font-medium ${textColor}`}>
-            {isPositive ? "+" : ""}{unrealized_plpc?.toFixed(2)}%
+          <div className={`text-xs font-medium ${textColor}`}>
+            {isPositive ? "+" : ""}{(unrealized_plpc * 100).toFixed(2)}%
           </div>
         </div>
       </div>
@@ -104,7 +106,7 @@ export function PositionCards({ positions, crypto }: PositionCardsProps) {
         </h3>
       </div>
       
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {sortedPositions.map((position) => (
           <PositionCard
             key={`${position.symbol}-${position.isCrypto ? 'crypto' : 'stock'}`}

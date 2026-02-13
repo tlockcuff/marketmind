@@ -58,7 +58,7 @@ export function MobileNav({ currentTab, onTabChange }: MobileNavProps) {
   }
 
   return (
-    <div className="fixed bottom-0 left-0 right-0 bg-card border-t border-border lg:hidden">
+    <div className="fixed bottom-0 left-0 right-0 bg-card/95 backdrop-blur-sm border-t border-border z-50 lg:hidden">
       <div className="flex items-center justify-around py-2">
         {tabs.map((tab) => {
           const Icon = tab.icon;

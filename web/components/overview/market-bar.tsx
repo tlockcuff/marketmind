@@ -16,11 +16,10 @@ export function MarketBar({ status }: MarketBarProps) {
 
   if (!status) {
     return (
-      <div className="bg-card border border-border rounded-sm p-4">
+      <div className="bg-card border border-border rounded-sm p-3">
         <div className="animate-pulse flex items-center gap-4">
           <div className="h-4 bg-muted rounded w-24" />
           <div className="h-4 bg-muted rounded w-32" />
-          <div className="h-4 bg-muted rounded w-20" />
         </div>
       </div>
     );
@@ -31,35 +30,31 @@ export function MarketBar({ status }: MarketBarProps) {
   const statusDot = isOpen ? "bg-green-400" : "bg-yellow-400";
 
   return (
-    <div className="bg-card border border-border rounded-sm p-4">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2">
-            <div className={`w-2 h-2 rounded-full ${statusDot}`} />
-            <span className={`text-sm font-medium ${statusColor}`}>
-              {status.session}
-            </span>
-          </div>
-          
-          <div className="text-sm text-muted-foreground">
-            {marketHoursText}
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground uppercase tracking-wider">
-              Bot:
-            </span>
-            <span className={`text-xs font-bold ${
-              status.bot_running ? "text-green-400" : "text-red-400"
-            }`}>
-              {status.bot_running ? "RUNNING" : "STOPPED"}
-            </span>
-          </div>
+    <div className="bg-card border border-border rounded-sm px-4 py-3">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
+        <div className="flex items-center gap-2">
+          <div className={`w-2 h-2 rounded-full ${statusDot} shrink-0`} />
+          <span className={`text-sm font-medium ${statusColor}`}>
+            {status.session}
+          </span>
         </div>
 
-        <div className="text-xs text-muted-foreground">
-          {status.current_time}
+        <span className="text-sm text-muted-foreground">
+          {marketHoursText}
+        </span>
+
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-muted-foreground">Bot:</span>
+          <span className={`text-xs font-bold ${
+            status.bot_running ? "text-green-400" : "text-red-400"
+          }`}>
+            {status.bot_running ? "ON" : "OFF"}
+          </span>
         </div>
+
+        <span className="text-xs text-muted-foreground ml-auto">
+          {status.current_time}
+        </span>
       </div>
     </div>
   );

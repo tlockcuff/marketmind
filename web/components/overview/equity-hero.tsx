@@ -55,7 +55,7 @@ export function EquityHero({ account }: EquityHeroProps) {
 
         {/* Main Equity Display */}
         <div className="space-y-2">
-          <div className="text-4xl font-bold text-foreground">
+          <div className="text-3xl sm:text-4xl font-bold text-foreground">
             {formatMoney(account.equity)}
           </div>
           

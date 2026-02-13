@@ -5,10 +5,10 @@ interface ActivityFeedProps {
 }
 
 function formatLogEntry(log: string) {
-  // Extract timestamp if present
-  const timestampMatch = log.match(/^\[(\d{2}:\d{2}:\d{2})\]/);
-  const timestamp = timestampMatch ? timestampMatch[1] : null;
-  const message = timestampMatch ? log.substring(timestampMatch[0].length).trim() : log;
+  // Format: "HH:MM:SS | LEVEL | message"
+  const parts = log.split("|", 3);
+  const timestamp = parts.length >= 3 ? parts[0].trim() : null;
+  const message = parts.length >= 3 ? parts[2].trim() : log;
 
   // Determine log type and color
   let type = "info";
