@@ -595,7 +595,7 @@ class TradingBot:
                 price = self.market_data.get_current_price(ticker)
                 if price:
                     get_trade_history().record_close(ticker, price, "grok_exit")
-                self.discord.alert("Position Closed", f"{ticker} - {rationale}", "warning")
+                self.discord.alert("Closed Position", f"**{ticker}** — {rationale}", "warning")
 
         elif action_type == "adjust_stops":
             new_stop = action.get("new_stop")
@@ -631,7 +631,7 @@ class TradingBot:
             if result.success:
                 pos.qty += add_qty
                 logger.info(f"ADD {ticker}: +{add_qty} shares @ ~${price:.2f} ({rationale})")
-                self.discord.alert("Position Added", f"{ticker} +{add_qty} shares", "info")
+                self.discord.position_added(ticker, add_qty, price, pos.qty)
 
         elif action_type == "trim":
             # Trim existing position
@@ -650,7 +650,7 @@ class TradingBot:
                 price = self.market_data.get_current_price(ticker)
                 if price:
                     get_trade_history().record_close(ticker, price, "grok_trim")
-                self.discord.alert("Position Trimmed", f"{ticker} -{trim_qty} shares", "warning")
+                self.discord.position_trimmed(ticker, trim_qty, pos.qty, price or 0, reason="grok_trim")
 
     def _evaluate_signal(self, signal):
         """Evaluate and potentially execute a signal."""
@@ -670,7 +670,7 @@ class TradingBot:
                     price = self.market_data.get_current_price(ticker)
                     if price:
                         get_trade_history().record_close(ticker, price, "grok_sell_signal")
-                    self.discord.alert("Position Closed", f"{ticker} - Grok sell signal", "warning")
+                    self.discord.alert("Closed Position", f"**{ticker}** — Grok sell signal", "warning")
 
             if not settings.get("allow_short_selling"):
                 return  # Can't short, done after closing long
@@ -928,6 +928,7 @@ class TradingBot:
                 stop_loss,
                 take_profit,
                 score.total_score,
+                rationale=signal.rationale or "",
             )
 
     def _decide_trade_type(self, signal, score, price, indicators) -> str:
