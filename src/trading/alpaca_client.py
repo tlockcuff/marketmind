@@ -248,6 +248,42 @@ class AlpacaClient:
                 message=str(e),
             )
 
+    def submit_notional_order(
+        self,
+        symbol: str,
+        notional: float,
+        side: str,
+    ) -> OrderResult:
+        """Submit a notional (dollar-amount) market order. Supports fractional shares."""
+        try:
+            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            request = MarketOrderRequest(
+                symbol=symbol,
+                notional=round(notional, 2),
+                side=order_side,
+                time_in_force=TimeInForce.DAY,
+            )
+            order = self.client.submit_order(request)
+            logger.info(f"Notional order submitted: {symbol} {side} ${notional:.2f}")
+            return OrderResult(
+                success=True,
+                order_id=str(order.id),
+                filled_price=float(order.filled_avg_price) if order.filled_avg_price else None,
+                filled_qty=float(order.filled_qty) if order.filled_qty else None,
+                status=str(order.status),
+                message="Notional order submitted",
+            )
+        except Exception as e:
+            logger.error(f"Notional order failed: {e}")
+            return OrderResult(
+                success=False,
+                order_id=None,
+                filled_price=None,
+                filled_qty=None,
+                status="failed",
+                message=str(e),
+            )
+
     def submit_limit_order(
         self,
         symbol: str,

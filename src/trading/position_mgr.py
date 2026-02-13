@@ -81,8 +81,13 @@ class PositionManager:
         price: float,
         score: float,
         atr: float = None,
-    ) -> int:
-        """Calculate position size based on score, volatility, and settings."""
+    ) -> float:
+        """Calculate position size based on score, volatility, and settings.
+
+        Returns float qty (fractional shares supported). If the position value
+        would buy less than 1 whole share, returns fractional qty so that
+        notional ordering can be used. Returns 0 if position value < $10.
+        """
         account = self.alpaca.get_account()
         if not account:
             return 0
@@ -130,14 +135,24 @@ class PositionManager:
             logger.info(f"BP cap: ${position_value:,.0f} -> ${bp_cap:,.0f} (BP=${buying_power:,.0f})")
             position_value = bp_cap
 
-        shares = int(position_value / price)
+        # Minimum position value check — avoid tiny trades
+        if position_value < 10:
+            logger.info(f"Position value ${position_value:,.2f} below $10 minimum, skipping")
+            return 0
 
-        return max(1, shares) if shares > 0 else 0
+        # Support fractional shares: return float qty
+        # For expensive stocks where position_value < price, we'll get fractional qty
+        shares = position_value / price
+
+        # Round to 4 decimal places (Alpaca fractional precision)
+        shares = round(shares, 4)
+
+        return max(0.001, shares) if shares > 0 else 0
 
     def open_position(
         self,
         symbol: str,
-        qty: int,
+        qty: float,
         direction: str,
         entry_price: float,
         stop_loss: float,
@@ -161,7 +176,20 @@ class PositionManager:
         if limit_price is None:
             limit_price = entry_price
 
-        if use_bracket:
+        # Fractional shares: Alpaca bracket/limit orders don't support fractional qty.
+        # Use notional market order when qty < 1 (expensive stocks on small accounts).
+        is_fractional = qty < 1
+
+        if is_fractional:
+            # Notional order: buy by dollar amount instead of share count
+            notional_value = round(qty * entry_price, 2)
+            logger.info(f"Fractional order for {symbol}: {qty:.4f} shares → ${notional_value:.2f} notional")
+            result = self.alpaca.submit_notional_order(
+                symbol=symbol,
+                notional=notional_value,
+                side=direction,
+            )
+        elif use_bracket:
             result = self.alpaca.submit_bracket_order(
                 symbol=symbol,
                 qty=qty,

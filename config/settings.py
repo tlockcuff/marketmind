@@ -72,20 +72,20 @@ _resolve_alpaca_keys()
 DISCORD_WEBHOOK_URL = os.getenv("DISCORD_WEBHOOK_URL")
 
 # Portfolio
-PAPER_PORTFOLIO_SIZE = 100_000 # 100,000 paper portfolio size
+PAPER_PORTFOLIO_SIZE = 500 # $500 paper portfolio (matches live account)
 
 # Risk parameters
-MAX_POSITION_PCT = 0.15 # 15% of equity per trade (fewer, larger swing positions)
-MAX_CONCURRENT_POSITIONS = 10 # 10 concurrent stock positions (fewer, larger)
-STOP_LOSS_PCT = 0.07 # 7% stop loss (wider for multi-day swing holds)
-TAKE_PROFIT_PCT = 0.20 # 20% take profit (swing trades target larger moves)
-DAILY_LOSS_LIMIT_PCT = 0.08 # 8% daily loss limit (protects against catastrophic drawdowns)
+MAX_POSITION_PCT = 0.20 # 20% of equity per trade ($100 max per position on $500)
+MAX_CONCURRENT_POSITIONS = 5 # 5 concurrent stock positions (concentrate capital)
+STOP_LOSS_PCT = 0.05 # 5% stop loss (tighter stops for small account)
+TAKE_PROFIT_PCT = 0.15 # 15% take profit (swing trades)
+DAILY_LOSS_LIMIT_PCT = 0.05 # 5% daily loss limit ($25 max on $500)
 MIN_SCORE_THRESHOLD = 70 # 70% minimum score to trade (higher bar for fewer, better trades)
 SCAN_INTERVAL_MINUTES = 120 # 120 minutes between scans (swing trading doesn't need rapid scanning)
 
 # Recovery mode — close worst losers when buying power too low
-RECOVERY_BUYING_POWER_PCT = 0.10    # recover to 10% of equity free
-RECOVERY_BUYING_POWER_MIN = 10000   # ...or $10000, whichever
+RECOVERY_BUYING_POWER_PCT = 0.15    # recover to 15% of equity free
+RECOVERY_BUYING_POWER_MIN = 50      # ...or $50, whichever
 RECOVERY_COOLDOWN_MINUTES = 5       # cooldown after recovery
 
 # Scoring weights
@@ -120,7 +120,7 @@ MIN_SCORE_FOR_DAY_TRADE = 95  # Basically never day trade unless exceptional set
 RESERVE_DAY_TRADES = 2  # Reserve all day trades for emergencies
 
 # Options trading
-OPTIONS_ENABLED = True # Enable options trading
+OPTIONS_ENABLED = False # Disabled for $500 account (contracts too expensive)
 OPTIONS_MAX_POSITION_PCT = 0.05       # 5% equity per options trade
 OPTIONS_MIN_SCORE_DIRECTIONAL = 70 # 70% minimum score for directional options (higher than stocks — leverage needs conviction)
 OPTIONS_MIN_SCORE_SPREAD = 80 # 80% minimum score for spread options
@@ -222,7 +222,7 @@ EDITABLE_SETTINGS = {
     "crypto_enabled":            {"type": "bool",                             "label": "Crypto Trading",          "section": "Crypto"},
     # Recovery
     "recovery_buying_power_pct": {"type": "float", "min": 0.01, "max": 0.5,  "label": "Recovery BP %",           "section": "Recovery"},
-    "recovery_buying_power_min": {"type": "float", "min": 100,  "max": 100000,"label": "Recovery BP Min $",      "section": "Recovery"},
+    "recovery_buying_power_min": {"type": "float", "min": 10,   "max": 100000,"label": "Recovery BP Min $",      "section": "Recovery"},
     "recovery_cooldown_minutes": {"type": "int",   "min": 0,    "max": 60,   "label": "Recovery Cooldown (min)", "section": "Recovery"},
     # Data Sources
     "congress_enabled":          {"type": "bool",                             "label": "Congress Trading",        "section": "Data Sources"},

@@ -118,7 +118,7 @@ class RiskManager:
         self.daily_stats.max_drawdown = max(self.daily_stats.max_drawdown, drawdown)
 
         # Check buying power
-        if account.get("buying_power", 0) < 1000:
+        if account.get("buying_power", 0) < 50:
             return False, "Insufficient buying power"
 
         logger.info("Risk check passed")
@@ -291,10 +291,10 @@ class RiskManager:
     def validate_position_size(
         self,
         symbol: str,
-        qty: int,
+        qty: float,
         price: float,
-    ) -> tuple[bool, str, int]:
-        """Validate and potentially adjust position size."""
+    ) -> tuple[bool, str, float]:
+        """Validate and potentially adjust position size (supports fractional shares)."""
         account = self.alpaca.get_account()
         if not account:
             return False, "Cannot fetch account", 0
@@ -304,8 +304,8 @@ class RiskManager:
         max_position = equity * settings.get("max_position_pct")
 
         if position_value > max_position:
-            adjusted_qty = int(max_position / price)
-            if adjusted_qty < 1:
+            adjusted_qty = round(max_position / price, 4)
+            if adjusted_qty * price < 10:
                 return False, "Position too small after adjustment", 0
             return True, f"Adjusted from {qty} to {adjusted_qty}", adjusted_qty
 
