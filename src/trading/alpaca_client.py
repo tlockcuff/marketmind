@@ -259,11 +259,11 @@ class AlpacaClient:
                 symbol=symbol,
                 qty=qty,
                 side=order_side,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=TimeInForce.IOC,
                 limit_price=limit_price,
             )
             order = self.client.submit_order(request)
-            logger.info(f"Limit order submitted: {symbol} {side} {qty} @ {limit_price}")
+            logger.info(f"Limit order submitted: {symbol} {side} {qty} @ {limit_price} (IOC)")
             return OrderResult(
                 success=True,
                 order_id=str(order.id),
@@ -304,7 +304,7 @@ class AlpacaClient:
                     symbol=symbol,
                     qty=qty,
                     side=order_side,
-                    time_in_force=TimeInForce.GTC,
+                    time_in_force=TimeInForce.DAY,
                     limit_price=limit_price,
                     order_class=OrderClass.BRACKET,
                     stop_loss=StopLossRequest(stop_price=stop_loss),

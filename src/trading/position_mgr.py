@@ -146,6 +146,7 @@ class PositionManager:
         use_bracket: bool = True,
         atr: float = None,
         sector: str = None,
+        limit_price: float = None,
     ) -> bool:
         """Open a new position."""
         if not self.can_open_position():
@@ -156,6 +157,10 @@ class PositionManager:
             logger.warning(f"Already have position in {symbol}")
             return False
 
+        # Calculate limit price if not provided
+        if limit_price is None:
+            limit_price = entry_price
+
         if use_bracket:
             result = self.alpaca.submit_bracket_order(
                 symbol=symbol,
@@ -163,12 +168,20 @@ class PositionManager:
                 side=direction,
                 stop_loss=stop_loss,
                 take_profit=take_profit,
+                limit_price=limit_price,
             )
         else:
-            result = self.alpaca.submit_market_order(
+            # Use limit order (IOC) instead of market order
+            # Add tiny buffer: +0.1% for buys, -0.1% for sells
+            if direction.lower() == "buy":
+                lp = round(limit_price * 1.001, 2)
+            else:
+                lp = round(limit_price * 0.999, 2)
+            result = self.alpaca.submit_limit_order(
                 symbol=symbol,
                 qty=qty,
                 side=direction,
+                limit_price=lp,
             )
 
         if result.success:

@@ -298,19 +298,28 @@ class MarketDataFetcher:
             vix_price = vix.info.get("regularMarketPrice")
             result["vix"] = vix_price
 
-            if vix_price and vix_price > 30:
+            if vix_price and vix_price > 25:
                 result["regime"] = "high_volatility"
+                self._market_regime_cache = result
+                self._market_regime_time = time.time()
                 return result
 
-            # SPY SMA5 vs SMA20 for trend
+            # SPY SMA5 vs SMA20 for trend, plus SMA20 level check
             spy = yf.Ticker("SPY")
             hist = spy.history(period="30d", interval="1d")
             if hist is not None and len(hist) >= 20:
                 close = hist["Close"]
                 sma5 = close.rolling(5).mean().iloc[-1]
                 sma20 = close.rolling(20).mean().iloc[-1]
+                current_close = close.iloc[-1]
 
-                if sma5 > sma20 * 1.005:
+                # If SPY is below its 20-day SMA, bias toward trending_down
+                if current_close < sma20:
+                    if sma5 < sma20 * 0.995:
+                        result["regime"] = "trending_down"
+                    else:
+                        result["regime"] = "trending_down"  # below SMA20 = bearish bias
+                elif sma5 > sma20 * 1.005:
                     result["regime"] = "trending_up"
                 elif sma5 < sma20 * 0.995:
                     result["regime"] = "trending_down"

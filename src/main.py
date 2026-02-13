@@ -31,6 +31,7 @@ from src.trading.options.sizing import OptionsSizer
 from src.trading.options.position_mgr import OptionsPositionManager
 from src.signals.congress_client import CongressClient
 from src.signals.momentum_screener import MomentumScreener
+from src.analysis.correlation import check_correlation
 from src.scheduler.trading_hours import (
     is_market_open,
     is_trading_day,
@@ -106,6 +107,7 @@ class TradingBot:
         self.ticker_blacklist: set = set()  # Tickers that failed data fetch
         self._owned_symbols: set = set()  # Cache of owned symbols for quick lookup
         self._current_regime: str = "choppy"  # Market regime
+        self._regime_size_multiplier: float = 1.0  # Position size multiplier based on regime
         self._recovery_timestamp: datetime | None = None  # Last recovery time
         self._profit_locked: bool = False  # True when daily target reached
         self._earnings_cache_date: datetime.date | None = None  # Last earnings cache clear date
@@ -373,6 +375,17 @@ class TradingBot:
         regime_info = self.market_data.get_market_regime()
         self._current_regime = regime_info.get("regime", "choppy")
         logger.info(f"Market regime: {self._current_regime} (VIX={regime_info.get('vix')})")
+
+        # Set regime-based position size multiplier
+        regime_multipliers = {
+            "trending_up": 1.0,
+            "choppy": 0.7,
+            "high_volatility": 0.5,
+            "trending_down": 0.5,
+        }
+        self._regime_size_multiplier = regime_multipliers.get(self._current_regime, 0.7)
+        if self._current_regime in ("high_volatility", "trending_down"):
+            logger.info(f"DEFENSIVE MODE: {self._current_regime} regime, size multiplier={self._regime_size_multiplier}")
 
         # 1. Get current positions and cache
         positions = self.alpaca.get_positions()
@@ -749,6 +762,20 @@ class TradingBot:
                 )
                 return
 
+            # Correlation filter
+            corr_ok, corr_reason = check_correlation(ticker, self._owned_symbols, self.market_data)
+            if not corr_ok:
+                logger.info(f"Skipping {ticker}: {corr_reason}")
+                get_trade_history().record_rejected(
+                    symbol=ticker, direction=signal.direction,
+                    score=score.total_score, reason=corr_reason,
+                    score_breakdown={"grok": score.grok_score, "technical": score.technical_score,
+                                     "mtf": score.mtf_score, "backtest": score.backtest_score,
+                                     "volume": score.volume_score, "risk_reward": score.risk_reward_score},
+                    sector=sector,
+                )
+                return
+
             trade_type = self._decide_trade_type(signal, score, current_price, indicators)
             if trade_type == "skip":
                 return
@@ -801,6 +828,9 @@ class TradingBot:
         if score.total_score >= 80:
             qty = max(1, int(qty * 1.2))
 
+        # Apply market regime size multiplier
+        qty = max(1, int(qty * self._regime_size_multiplier))
+
         # Apply profit lock: reduce position size
         if self._profit_locked:
             qty = max(1, int(qty * 0.50))
@@ -845,6 +875,7 @@ class TradingBot:
             use_bracket=True,
             atr=atr,
             sector=sector,
+            limit_price=current_price,
         )
 
         if success:
@@ -943,6 +974,8 @@ class TradingBot:
         equity = account.get("equity", 0) if account else 0
         sizer = OptionsSizer(equity)
         qty = sizer.size_directional(score.total_score, contract_price)
+        # Apply market regime size multiplier
+        qty = max(1, int(qty * self._regime_size_multiplier)) if qty >= 1 else qty
         if qty < 1:
             if self.position_mgr.can_open_position():
                 logger.info(f"Options size too small for {ticker}, falling back to stock")
