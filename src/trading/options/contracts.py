@@ -77,6 +77,12 @@ class ContractSelector:
                 abs_delta = abs(c.delta)
                 if abs_delta < delta_min or abs_delta > delta_max:
                     continue
+            # Enforce max moneyness even when greeks are available
+            moneyness = (c.strike - price) / price
+            if option_type == "call" and c.strike > price * 1.03:
+                continue
+            if option_type == "put" and c.strike < price * 0.97:
+                continue
             candidates.append(c)
 
         # If greeks-based filtering left nothing, fallback to strike proximity
@@ -87,10 +93,10 @@ class ContractSelector:
             logger.info(f"No liquid {option_type} contracts for {underlying}")
             return None
 
-        # Prefer contracts with known delta; among those, pick highest OI
+        # Prefer contracts with known delta; among those, pick closest to ATM (OI as tiebreaker)
         with_delta = [c for c in candidates if c.delta is not None]
         pool = with_delta if with_delta else candidates
-        best = max(pool, key=lambda c: c.open_interest)
+        best = min(pool, key=lambda c: (abs(c.strike - price) / price, -c.open_interest))
         logger.info(
             f"Selected {best.symbol}: delta={best.delta}, DTE={best.dte}, "
             f"OI={best.open_interest}, mid=${best.mid}"
@@ -109,14 +115,16 @@ class ContractSelector:
                 continue
             moneyness = (c.strike - price) / price
             if option_type == "call":
-                # ATM to slightly OTM: -2% to +5%
-                if -0.02 <= moneyness <= 0.05:
+                # ATM to slightly OTM: -2% to +3%
+                if -0.02 <= moneyness <= 0.03:
                     candidates.append(c)
             else:
-                # ATM to slightly OTM: -5% to +2%
-                if -0.05 <= moneyness <= 0.02:
+                # ATM to slightly OTM: -3% to +2%
+                if -0.03 <= moneyness <= 0.02:
                     candidates.append(c)
-        return candidates
+        # Sort by absolute moneyness (closest to ATM first) and return top 5
+        candidates.sort(key=lambda c: abs((c.strike - price) / price))
+        return candidates[:5]
 
     def find_covered_call_contract(
         self, underlying: str, price: float, shares: int

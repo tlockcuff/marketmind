@@ -735,7 +735,7 @@ class TradingBot:
 
         # Execute if score meets threshold
         if score.total_score >= score_threshold:
-            # Sector concentration check
+            # Sector concentration check (applies to ALL trade types: stock, options, spreads)
             can_sector, sector_msg = self.position_mgr.can_open_in_sector(sector)
             if not can_sector:
                 logger.info(f"Skipping {ticker}: {sector_msg}")
