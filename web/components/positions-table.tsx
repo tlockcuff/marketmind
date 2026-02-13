@@ -17,6 +17,16 @@ function formatMoney(n: number) {
   return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 2 });
 }
 
+function formatQty(qty: number, symbol: string) {
+  // Crypto pairs and very small quantities get more decimals
+  const isCrypto = symbol.includes("USD") && !symbol.startsWith("T");
+  if (qty >= 100) return qty.toLocaleString("en-US", { maximumFractionDigits: 0 });
+  if (qty >= 1) return qty.toLocaleString("en-US", { maximumFractionDigits: 2 });
+  if (isCrypto && qty < 0.01) return qty.toFixed(6);
+  if (qty < 0.01) return qty.toFixed(6);
+  return qty.toLocaleString("en-US", { maximumFractionDigits: 4 });
+}
+
 function plColor(n: number) {
   return n >= 0 ? "pl-positive" : "pl-negative";
 }
@@ -66,7 +76,7 @@ export function PositionsTable({ positions }: Props) {
                       <span className="text-cyan-400">{p.symbol}</span>
                       <span className="text-muted-foreground ml-2 text-[11px]">{p.name}</span>
                     </TableCell>
-                    <TableCell className="text-right">{p.qty}</TableCell>
+                    <TableCell className="text-right">{formatQty(p.qty, p.symbol)}</TableCell>
                     <TableCell className="text-right">{formatMoney(p.avg_entry)}</TableCell>
                     <TableCell className="text-right">{formatMoney(p.current_price)}</TableCell>
                     <TableCell className={`text-right font-semibold ${plColor(p.unrealized_pl)}`}>

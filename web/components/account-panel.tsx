@@ -18,9 +18,11 @@ function Row({ label, value, className = "" }: { label: string; value: string; c
 
 function formatMoney(n: number) {
   if (!n || n === 0) {
-    return "$0";
+    return "$0.00";
   }
-  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: 0 });
+  // Show cents for small amounts (under $100)
+  const decimals = Math.abs(n) < 100 ? 2 : 0;
+  return n.toLocaleString("en-US", { style: "currency", currency: "USD", minimumFractionDigits: decimals, maximumFractionDigits: 2 });
 }
 
 export function AccountPanel({ account }: Props) {
