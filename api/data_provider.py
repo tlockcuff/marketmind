@@ -342,6 +342,299 @@ def get_market_indices() -> list[dict]:
         return []
 
 
+def get_equity_curve_data(date_range: str = "ALL") -> dict:
+    """Get equity curve data with benchmark comparison."""
+    from datetime import datetime, timedelta
+
+    mode = _mode()
+    now = datetime.now()
+
+    range_map = {
+        "1W": timedelta(weeks=1),
+        "1M": timedelta(days=30),
+        "3M": timedelta(days=90),
+    }
+    cutoff = now - range_map[date_range] if date_range in range_map else None
+
+    try:
+        with get_db() as conn:
+            # Get daily snapshots
+            if cutoff:
+                rows = conn.execute(
+                    """SELECT date, equity, spy_close, btcusd_close, day_pnl, cumulative_pnl
+                       FROM daily_snapshots 
+                       WHERE mode = %s AND date >= %s 
+                       ORDER BY date""",
+                    (mode, cutoff.date()),
+                ).fetchall()
+            else:
+                rows = conn.execute(
+                    """SELECT date, equity, spy_close, btcusd_close, day_pnl, cumulative_pnl
+                       FROM daily_snapshots 
+                       WHERE mode = %s 
+                       ORDER BY date""",
+                    (mode,),
+                ).fetchall()
+
+            equity_curve = []
+            spy_curve = []
+            btc_curve = []
+            first_equity = None
+            first_spy = None
+            first_btc = None
+
+            for r in rows:
+                equity = float(r[1]) if r[1] else 0
+                spy = float(r[2]) if r[2] else None
+                btc = float(r[3]) if r[3] else None
+                
+                if first_equity is None and equity > 0:
+                    first_equity = equity
+                if first_spy is None and spy:
+                    first_spy = spy
+                if first_btc is None and btc:
+                    first_btc = btc
+
+                # Normalize to starting values for comparison
+                normalized_equity = (equity / first_equity * 100) if first_equity else 100
+                normalized_spy = (spy / first_spy * 100) if (first_spy and spy) else None
+                normalized_btc = (btc / first_btc * 100) if (first_btc and btc) else None
+
+                equity_curve.append({
+                    "date": r[0].isoformat(),
+                    "equity": equity,
+                    "normalized": normalized_equity,
+                    "day_pnl": float(r[4]) if r[4] else 0,
+                    "cumulative_pnl": float(r[5]) if r[5] else 0,
+                })
+
+                if normalized_spy is not None:
+                    spy_curve.append({
+                        "date": r[0].isoformat(),
+                        "price": spy,
+                        "normalized": normalized_spy,
+                    })
+
+                if normalized_btc is not None:
+                    btc_curve.append({
+                        "date": r[0].isoformat(),
+                        "price": btc,
+                        "normalized": normalized_btc,
+                    })
+
+            return {
+                "equity_curve": equity_curve,
+                "spy_curve": spy_curve,
+                "btc_curve": btc_curve,
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_strategy_breakdown_data(date_range: str = "ALL") -> dict:
+    """Get per-strategy performance breakdown."""
+    from datetime import datetime, timedelta
+
+    mode = _mode()
+    now = datetime.now()
+
+    range_map = {
+        "1W": timedelta(weeks=1),
+        "1M": timedelta(days=30),
+        "3M": timedelta(days=90),
+    }
+    cutoff = now - range_map[date_range] if date_range in range_map else None
+
+    try:
+        with get_db() as conn:
+            # Get closed trades with strategy tags
+            q = """SELECT strategy_tag, pnl, hold_duration_hours, score
+                   FROM trades 
+                   WHERE mode = %s AND status != 'open' AND pnl IS NOT NULL"""
+            params = [mode]
+            if cutoff:
+                q += " AND exit_time >= %s"
+                params.append(cutoff)
+
+            rows = conn.execute(q, params).fetchall()
+
+            strategy_stats = {}
+            for r in rows:
+                strategy = r[0] or "other"
+                pnl = float(r[1])
+                hold_hours = float(r[2]) if r[2] else 0
+                score = float(r[3]) if r[3] else 0
+
+                if strategy not in strategy_stats:
+                    strategy_stats[strategy] = {
+                        "strategy": strategy,
+                        "trades": 0,
+                        "wins": 0,
+                        "losses": 0,
+                        "total_pnl": 0,
+                        "gross_profit": 0,
+                        "gross_loss": 0,
+                        "total_hold_hours": 0,
+                        "win_hold_hours": 0,
+                        "loss_hold_hours": 0,
+                        "win_count_with_duration": 0,
+                        "loss_count_with_duration": 0,
+                        "total_score": 0,
+                    }
+
+                stats = strategy_stats[strategy]
+                stats["trades"] += 1
+                stats["total_pnl"] += pnl
+                stats["total_score"] += score
+
+                if pnl > 0:
+                    stats["wins"] += 1
+                    stats["gross_profit"] += pnl
+                    if hold_hours > 0:
+                        stats["win_hold_hours"] += hold_hours
+                        stats["win_count_with_duration"] += 1
+                else:
+                    stats["losses"] += 1
+                    stats["gross_loss"] += abs(pnl)
+                    if hold_hours > 0:
+                        stats["loss_hold_hours"] += hold_hours
+                        stats["loss_count_with_duration"] += 1
+
+                if hold_hours > 0:
+                    stats["total_hold_hours"] += hold_hours
+
+            # Calculate derived metrics
+            breakdown = []
+            for stats in strategy_stats.values():
+                trades = stats["trades"]
+                wins = stats["wins"]
+                losses = stats["losses"]
+                
+                win_rate = (wins / trades * 100) if trades else 0
+                avg_pnl = (stats["total_pnl"] / trades) if trades else 0
+                profit_factor = (stats["gross_profit"] / stats["gross_loss"]) if stats["gross_loss"] > 0 else (float('inf') if stats["gross_profit"] > 0 else 0)
+                avg_score = (stats["total_score"] / trades) if trades else 0
+                
+                # Average hold times
+                avg_hold_hours = (stats["total_hold_hours"] / trades) if trades else 0
+                avg_win_hold = (stats["win_hold_hours"] / stats["win_count_with_duration"]) if stats["win_count_with_duration"] else 0
+                avg_loss_hold = (stats["loss_hold_hours"] / stats["loss_count_with_duration"]) if stats["loss_count_with_duration"] else 0
+
+                breakdown.append({
+                    "strategy": stats["strategy"],
+                    "trades": trades,
+                    "wins": wins,
+                    "losses": losses,
+                    "win_rate": round(win_rate, 1),
+                    "total_pnl": round(stats["total_pnl"], 2),
+                    "avg_pnl": round(avg_pnl, 2),
+                    "profit_factor": round(profit_factor, 2) if profit_factor != float('inf') else "∞",
+                    "avg_score": round(avg_score, 1),
+                    "avg_hold_hours": round(avg_hold_hours, 1),
+                    "avg_win_hold_hours": round(avg_win_hold, 1),
+                    "avg_loss_hold_hours": round(avg_loss_hold, 1),
+                })
+
+            # Sort by total P/L descending
+            breakdown.sort(key=lambda x: x["total_pnl"], reverse=True)
+
+            return {"strategy_breakdown": breakdown}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def get_trade_analysis_data(date_range: str = "ALL") -> dict:
+    """Get trade analysis with hold duration and best/worst trades."""
+    from datetime import datetime, timedelta
+
+    mode = _mode()
+    now = datetime.now()
+
+    range_map = {
+        "1W": timedelta(weeks=1),
+        "1M": timedelta(days=30),
+        "3M": timedelta(days=90),
+    }
+    cutoff = now - range_map[date_range] if date_range in range_map else None
+
+    try:
+        with get_db() as conn:
+            # Get recent trades with all fields
+            q = """SELECT symbol, direction, entry_price, exit_price, pnl,
+                          entry_time, exit_time, hold_duration_hours, strategy_tag, score
+                   FROM trades 
+                   WHERE mode = %s AND status != 'open' AND pnl IS NOT NULL"""
+            params = [mode]
+            if cutoff:
+                q += " AND exit_time >= %s"
+                params.append(cutoff)
+            q += " ORDER BY exit_time DESC"
+
+            rows = conn.execute(q, params).fetchall()
+
+            trades = []
+            pnls = []
+            durations = []
+            
+            for r in rows:
+                pnl = float(r[4])
+                hold_hours = float(r[7]) if r[7] else 0
+                
+                trades.append({
+                    "symbol": r[0],
+                    "direction": r[1],
+                    "entry_price": float(r[2]) if r[2] else 0,
+                    "exit_price": float(r[3]) if r[3] else 0,
+                    "pnl": pnl,
+                    "entry_time": r[5].isoformat() if r[5] else None,
+                    "exit_time": r[6].isoformat() if r[6] else None,
+                    "hold_duration_hours": hold_hours,
+                    "strategy_tag": r[8] or "other",
+                    "score": float(r[9]) if r[9] else 0,
+                })
+                
+                pnls.append(pnl)
+                if hold_hours > 0:
+                    durations.append(hold_hours)
+
+            # Find best and worst trades
+            best_trade = max(trades, key=lambda t: t["pnl"]) if trades else None
+            worst_trade = min(trades, key=lambda t: t["pnl"]) if trades else None
+
+            # Hold duration analysis
+            avg_duration = sum(durations) / len(durations) if durations else 0
+            win_durations = [d for i, d in enumerate(durations) if i < len(pnls) and pnls[i] > 0]
+            loss_durations = [d for i, d in enumerate(durations) if i < len(pnls) and pnls[i] <= 0]
+            
+            avg_win_duration = sum(win_durations) / len(win_durations) if win_durations else 0
+            avg_loss_duration = sum(loss_durations) / len(loss_durations) if loss_durations else 0
+
+            # Recent performance (last 10 trades)
+            recent_trades = trades[:10]
+            recent_pnl = sum(t["pnl"] for t in recent_trades)
+            recent_wins = sum(1 for t in recent_trades if t["pnl"] > 0)
+            recent_win_rate = (recent_wins / len(recent_trades) * 100) if recent_trades else 0
+
+            return {
+                "recent_trades": trades[:50],  # Last 50 trades for display
+                "best_trade": best_trade,
+                "worst_trade": worst_trade,
+                "hold_duration_analysis": {
+                    "avg_duration_hours": round(avg_duration, 1),
+                    "avg_win_duration_hours": round(avg_win_duration, 1),
+                    "avg_loss_duration_hours": round(avg_loss_duration, 1),
+                    "total_trades_with_duration": len(durations),
+                },
+                "recent_performance": {
+                    "last_10_trades_pnl": round(recent_pnl, 2),
+                    "last_10_win_rate": round(recent_win_rate, 1),
+                    "last_10_count": len(recent_trades),
+                },
+            }
+    except Exception as e:
+        return {"error": str(e)}
+
+
 def get_analytics_data(date_range: str = "ALL") -> dict:
     """Aggregate analytics from trades + daily_stats tables."""
     from datetime import datetime, timedelta
@@ -376,7 +669,7 @@ def get_analytics_data(date_range: str = "ALL") -> dict:
 
             # Closed trades
             q = """SELECT symbol, direction, qty, entry_price, exit_price, pnl,
-                          entry_time, exit_time, sector, score
+                          entry_time, exit_time, sector, score, hold_duration_hours, strategy_tag
                    FROM trades WHERE mode = %s AND status != 'open'"""
             params: list = [mode]
             if cutoff:
@@ -398,6 +691,8 @@ def get_analytics_data(date_range: str = "ALL") -> dict:
                     "exit_time": r[7].isoformat() if r[7] else None,
                     "sector": r[8] or "Unknown",
                     "score": float(r[9]) if r[9] else 0,
+                    "hold_duration_hours": float(r[10]) if r[10] else None,
+                    "strategy_tag": r[11] or "other",
                 })
 
             # Compute metrics
@@ -449,6 +744,18 @@ def get_analytics_data(date_range: str = "ALL") -> dict:
                 sector_pnl[s] = sector_pnl.get(s, 0) + t["pnl"]
             sector_breakdown = [{"sector": k, "pnl": round(v, 2)} for k, v in sector_pnl.items()]
 
+            # Strategy breakdown  
+            strategy_pnl: dict[str, float] = {}
+            strategy_counts: dict[str, int] = {}
+            for t in trades:
+                s = t["strategy_tag"]
+                strategy_pnl[s] = strategy_pnl.get(s, 0) + t["pnl"]
+                strategy_counts[s] = strategy_counts.get(s, 0) + 1
+            strategy_breakdown = [
+                {"strategy": k, "pnl": round(v, 2), "trades": strategy_counts[k]} 
+                for k, v in strategy_pnl.items()
+            ]
+
             # Cumulative P/L series
             cumulative = []
             running = 0
@@ -466,6 +773,7 @@ def get_analytics_data(date_range: str = "ALL") -> dict:
                 "trades": trades,
                 "cumulative_pnl": cumulative,
                 "sector_breakdown": sector_breakdown,
+                "strategy_breakdown": strategy_breakdown,
                 "metrics": {
                     "total_pnl": round(total_pnl, 2),
                     "total_trades": total_trades,

@@ -10,7 +10,7 @@ import logging
 import os
 import sys
 import time
-from datetime import datetime
+from datetime import datetime, time as dt_time
 from src.utils import utcnow, ensure_aware
 from config import settings
 from config.logging_config import setup_logging
@@ -39,7 +39,9 @@ from src.scheduler.trading_hours import (
     should_avoid_trading,
     format_market_status,
     time_until_open,
+    now_et,
 )
+from src.tracking.daily_snapshot import take_snapshot
 
 logger = logging.getLogger(__name__)
 
@@ -129,6 +131,10 @@ class TradingBot:
         if self.crypto_enabled:
             self.crypto_trader = CryptoTrader(self.alpaca, self.grok, self.discord)
             logger.info("Crypto trading enabled (24/7)")
+
+        # Daily snapshot scheduling
+        self._last_market_close_snapshot: datetime.date | None = None
+        self._last_midnight_snapshot: datetime.date | None = None
 
         logger.info(f"Trading bot initialized (paper={paper})")
 
@@ -270,6 +276,9 @@ class TradingBot:
 
         while True:
             try:
+                # Check snapshot schedules first (runs 24/7)
+                self._check_snapshot_schedules()
+                
                 # Crypto runs 24/7, independent of market hours
                 self._crypto_cycle()
 
@@ -1168,6 +1177,42 @@ class TradingBot:
         except Exception as e:
             logger.exception(f"Crypto cycle error: {e}")
         self._last_crypto_cycle = now
+
+    def _check_snapshot_schedules(self):
+        """Check and run scheduled daily snapshots."""
+        now = now_et()
+        today = now.date()
+        current_time = now.time()
+        
+        # Market close snapshot (4:05 PM ET on trading days)
+        if (is_trading_day() and
+            current_time >= dt_time(16, 5) and  # 4:05 PM ET
+            self._last_market_close_snapshot != today):
+            try:
+                logger.info("Taking end-of-day snapshot...")
+                success = take_snapshot(today)
+                if success:
+                    self._last_market_close_snapshot = today
+                    self.discord.alert("Daily Snapshot", 
+                                       f"End-of-day snapshot taken for {today}", "info")
+                else:
+                    logger.warning("End-of-day snapshot failed")
+            except Exception as e:
+                logger.exception(f"End-of-day snapshot error: {e}")
+
+        # Midnight snapshot (crypto markets, 24/7 data)
+        if (current_time >= dt_time(0, 5) and  # 12:05 AM ET
+            self._last_midnight_snapshot != today):
+            try:
+                logger.info("Taking midnight snapshot...")
+                success = take_snapshot(today)
+                if success:
+                    self._last_midnight_snapshot = today
+                    logger.info(f"Midnight snapshot taken for {today}")
+                else:
+                    logger.warning("Midnight snapshot failed")
+            except Exception as e:
+                logger.exception(f"Midnight snapshot error: {e}")
 
     def _send_daily_summary(self):
         """Send end of day summary."""

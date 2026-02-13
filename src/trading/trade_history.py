@@ -13,6 +13,41 @@ from src.db import get_db
 logger = logging.getLogger(__name__)
 
 
+def classify_strategy(score_breakdown: dict, grok_rationale: str) -> str:
+    """Classify trade strategy based on signal source and rationale keywords.
+    
+    Returns one of: momentum, mean_reversion, breakout, trend_follow, 
+    news_catalyst, congress_signal, crypto_swing, other
+    """
+    if not isinstance(score_breakdown, dict):
+        score_breakdown = {}
+    
+    signal_source = score_breakdown.get("signal_source", "grok").lower()
+    rationale = (grok_rationale or "").lower()
+    
+    # Check signal source first
+    if signal_source == "congress":
+        return "congress_signal"
+    elif signal_source == "momentum":
+        return "momentum"
+    elif "crypto" in signal_source or "/usd" in rationale:
+        return "crypto_swing"
+    
+    # Check rationale keywords
+    if any(word in rationale for word in ["momentum", "uptrend", "strength", "accelerat"]):
+        return "momentum"
+    elif any(word in rationale for word in ["oversold", "bounce", "reversal", "support", "revert"]):
+        return "mean_reversion"
+    elif any(word in rationale for word in ["breakout", "break out", "resistance", "breakthrough"]):
+        return "breakout"
+    elif any(word in rationale for word in ["trend", "follow", "direction", "pattern"]):
+        return "trend_follow"
+    elif any(word in rationale for word in ["news", "earnings", "announcement", "catalyst", "event"]):
+        return "news_catalyst"
+    else:
+        return "other"
+
+
 def _mode() -> str:
     return "live" if os.environ.get("TRADING_MODE", "paper").lower() == "live" else "paper"
 
@@ -57,7 +92,8 @@ class TradeHistory:
                               stop_loss, take_profit, score, grok_rationale,
                               score_breakdown, status, exit_price, exit_time, pnl,
                               asset_type, option_details, sector, atr_at_entry,
-                              trailing_stop_updates, scale_out_level
+                              trailing_stop_updates, scale_out_level, hold_duration_hours,
+                              strategy_tag
                        FROM trades WHERE mode = %s AND status = 'open'""",
                     (mode,),
                 ).fetchall()
@@ -85,6 +121,8 @@ class TradeHistory:
                         "atr_at_entry": float(r[17]) if r[17] else None,
                         "trailing_stop_updates": r[18] or 0,
                         "scale_out_level": r[19] or 0,
+                        "hold_duration_hours": float(r[20]) if r[20] else None,
+                        "strategy_tag": r[21] or "other",
                     }
                 # Also load recent closed trades for stats
                 closed_rows = conn.execute(
@@ -92,7 +130,8 @@ class TradeHistory:
                               stop_loss, take_profit, score, grok_rationale,
                               score_breakdown, status, exit_price, exit_time, pnl,
                               asset_type, option_details, sector, atr_at_entry,
-                              trailing_stop_updates, scale_out_level
+                              trailing_stop_updates, scale_out_level, hold_duration_hours,
+                              strategy_tag
                        FROM trades WHERE mode = %s AND status != 'open'
                        ORDER BY exit_time DESC
                        LIMIT 500""",
@@ -121,6 +160,8 @@ class TradeHistory:
                         "atr_at_entry": float(r[17]) if r[17] else None,
                         "trailing_stop_updates": r[18] or 0,
                         "scale_out_level": r[19] or 0,
+                        "hold_duration_hours": float(r[20]) if r[20] else None,
+                        "strategy_tag": r[21] or "other",
                     })
         except Exception as e:
             logger.warning(f"Failed to load trades from DB: {e}")
@@ -146,16 +187,22 @@ class TradeHistory:
         # Store signal_source in score_breakdown for attribution tracking
         score_breakdown_with_source = dict(score_breakdown or {})
         score_breakdown_with_source["signal_source"] = signal_source
+        
+        # Classify strategy based on signal source and rationale
+        strategy_tag = classify_strategy(score_breakdown_with_source, grok_rationale)
+        
         try:
             with get_db() as conn:
                 conn.execute(
                     """INSERT INTO trades (mode, symbol, direction, qty, entry_price,
                               entry_time, stop_loss, take_profit, score,
-                              grok_rationale, score_breakdown, sector, atr_at_entry)
-                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
+                              grok_rationale, score_breakdown, sector, atr_at_entry,
+                              strategy_tag)
+                       VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)""",
                     (mode, symbol, direction, qty, entry_price, now,
                      stop_loss, take_profit, score, grok_rationale,
-                     json.dumps(score_breakdown_with_source), sector, atr_at_entry),
+                     json.dumps(score_breakdown_with_source), sector, atr_at_entry,
+                     strategy_tag),
                 )
                 conn.commit()
         except Exception as e:
@@ -172,8 +219,9 @@ class TradeHistory:
             "sector": sector, "atr_at_entry": atr_at_entry,
             "asset_type": "stock", "opened_at": now.isoformat(),
             "trailing_stop_updates": 0, "scale_out_level": 0,
+            "strategy_tag": strategy_tag,
         }
-        logger.info(f"Recorded trade: {symbol} {direction} - {grok_rationale[:50]}...")
+        logger.info(f"Recorded trade: {symbol} {direction} ({strategy_tag}) - {grok_rationale[:50]}...")
 
     def record_close(self, symbol: str, exit_price: float, reason: str):
         """Record trade close."""
@@ -188,13 +236,27 @@ class TradeHistory:
         else:
             pnl = (trade["entry_price"] - exit_price) * trade["qty"]
 
+        # Calculate hold duration in hours
+        entry_time_str = trade.get("entry_time")
+        hold_duration_hours = None
+        if entry_time_str:
+            try:
+                from datetime import datetime
+                if isinstance(entry_time_str, str):
+                    entry_time = datetime.fromisoformat(entry_time_str)
+                else:
+                    entry_time = entry_time_str
+                hold_duration_hours = (now - entry_time).total_seconds() / 3600
+            except Exception as e:
+                logger.warning(f"Failed to calculate hold duration: {e}")
+
         try:
             with get_db() as conn:
                 conn.execute(
                     """UPDATE trades SET status = %s, exit_price = %s,
-                              exit_time = %s, pnl = %s
+                              exit_time = %s, pnl = %s, hold_duration_hours = %s
                        WHERE mode = %s AND symbol = %s AND status = 'open'""",
-                    (reason, exit_price, now, pnl, mode, symbol),
+                    (reason, exit_price, now, pnl, hold_duration_hours, mode, symbol),
                 )
                 conn.commit()
         except Exception as e:
@@ -206,6 +268,7 @@ class TradeHistory:
         trade["exit_price"] = exit_price
         trade["exit_time"] = now.isoformat()
         trade["pnl"] = pnl
+        trade["hold_duration_hours"] = hold_duration_hours
         self.trades.pop(symbol, None)
         self.closed_trades.insert(0, trade)
         # Keep in-memory closed trades bounded

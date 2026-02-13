@@ -22,10 +22,28 @@ CREATE TABLE IF NOT EXISTS trades (
     sector VARCHAR(50),
     atr_at_entry NUMERIC(12,4),
     trailing_stop_updates INTEGER DEFAULT 0,
-    scale_out_level INTEGER DEFAULT 0
+    scale_out_level INTEGER DEFAULT 0,
+    hold_duration_hours NUMERIC(10,2),
+    strategy_tag VARCHAR(30)
 );
 CREATE INDEX IF NOT EXISTS idx_trades_mode_status ON trades(mode, status);
 CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol);
+
+CREATE TABLE IF NOT EXISTS daily_snapshots (
+    id SERIAL PRIMARY KEY,
+    mode VARCHAR(5) NOT NULL DEFAULT 'paper',
+    date DATE NOT NULL,
+    equity NUMERIC(12,2),
+    cash NUMERIC(12,2),
+    positions_value NUMERIC(12,2),
+    open_positions INTEGER,
+    day_pnl NUMERIC(12,4),
+    cumulative_pnl NUMERIC(12,4),
+    spy_close NUMERIC(12,4),
+    btcusd_close NUMERIC(12,4),
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    UNIQUE(mode, date)
+);
 
 CREATE TABLE IF NOT EXISTS rejected_signals (
     id SERIAL PRIMARY KEY,

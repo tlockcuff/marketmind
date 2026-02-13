@@ -170,6 +170,72 @@ export interface SectorPnl {
   pnl: number;
 }
 
+export interface StrategyPnl {
+  strategy: string;
+  pnl: number;
+  trades: number;
+}
+
+export interface StrategyBreakdown {
+  strategy: string;
+  trades: number;
+  wins: number;
+  losses: number;
+  win_rate: number;
+  total_pnl: number;
+  avg_pnl: number;
+  profit_factor: number | string;
+  avg_score: number;
+  avg_hold_hours: number;
+  avg_win_hold_hours: number;
+  avg_loss_hold_hours: number;
+}
+
+export interface EquityCurvePoint {
+  date: string;
+  equity: number;
+  normalized: number;
+  day_pnl: number;
+  cumulative_pnl: number;
+}
+
+export interface BenchmarkPoint {
+  date: string;
+  price: number;
+  normalized: number;
+}
+
+export interface HoldDurationAnalysis {
+  avg_duration_hours: number;
+  avg_win_duration_hours: number;
+  avg_loss_duration_hours: number;
+  total_trades_with_duration: number;
+}
+
+export interface RecentPerformance {
+  last_10_trades_pnl: number;
+  last_10_win_rate: number;
+  last_10_count: number;
+}
+
+export interface EquityCurveData {
+  equity_curve: EquityCurvePoint[];
+  spy_curve: BenchmarkPoint[];
+  btc_curve: BenchmarkPoint[];
+}
+
+export interface StrategyBreakdownData {
+  strategy_breakdown: StrategyBreakdown[];
+}
+
+export interface TradeAnalysisData {
+  recent_trades: ClosedTrade[];
+  best_trade: ClosedTrade | null;
+  worst_trade: ClosedTrade | null;
+  hold_duration_analysis: HoldDurationAnalysis;
+  recent_performance: RecentPerformance;
+}
+
 export interface ClosedTrade {
   symbol: string;
   direction: string;
@@ -181,6 +247,8 @@ export interface ClosedTrade {
   exit_time: string | null;
   sector: string;
   score: number;
+  hold_duration_hours?: number;
+  strategy_tag?: string;
 }
 
 export interface AnalyticsData {
@@ -188,6 +256,7 @@ export interface AnalyticsData {
   trades: ClosedTrade[];
   cumulative_pnl: CumulativePnlPoint[];
   sector_breakdown: SectorPnl[];
+  strategy_breakdown?: StrategyPnl[];
   metrics: AnalyticsMetrics;
 }
 

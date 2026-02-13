@@ -5,9 +5,12 @@ import Link from "next/link";
 import { getApiUrl } from "@/lib/utils";
 import { MetricsCards } from "@/components/analytics/metrics-cards";
 import { EquityCurveChart } from "@/components/analytics/equity-curve";
+import { EquityCurveEnhanced } from "@/components/analytics/equity-curve-enhanced";
 import { CumulativePnlChart } from "@/components/analytics/cumulative-pnl";
 import { WinLossHistogram } from "@/components/analytics/win-loss-histogram";
 import { SectorBreakdown } from "@/components/analytics/sector-breakdown";
+import { StrategyBreakdownTable } from "@/components/analytics/strategy-breakdown-table";
+import { TradeAnalysis } from "@/components/analytics/trade-analysis";
 import type { AnalyticsData } from "@/lib/types";
 
 const RANGES = ["1W", "1M", "3M", "ALL"] as const;
@@ -84,14 +87,50 @@ export default function AnalyticsPage() {
       {data && (
         <div className="space-y-4">
           <MetricsCards metrics={data.metrics} />
+          
+          {/* Enhanced Equity Curve with Benchmarks */}
+          <EquityCurveEnhanced range={range} />
+          
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            <EquityCurveChart data={data.equity_curve} />
             <CumulativePnlChart data={data.cumulative_pnl} />
-          </div>
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <WinLossHistogram trades={data.trades} />
-            <SectorBreakdown data={data.sector_breakdown} />
           </div>
+          
+          {/* Strategy Performance Table */}
+          <StrategyBreakdownTable range={range} />
+          
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <SectorBreakdown data={data.sector_breakdown} />
+            <div className="border border-border rounded-sm bg-card p-4">
+              <h3 className="text-sm font-medium mb-3">Strategy Distribution</h3>
+              {data.strategy_breakdown?.length ? (
+                <div className="space-y-2">
+                  {data.strategy_breakdown.map((strategy, i) => (
+                    <div key={strategy.strategy} className="flex justify-between items-center text-sm">
+                      <span className="text-foreground">
+                        {strategy.strategy.replace(/_/g, " ").replace(/\b\w/g, l => l.toUpperCase())}
+                      </span>
+                      <div className="text-right">
+                        <span className={`font-medium ${
+                          strategy.pnl >= 0 ? "text-green-400" : "text-red-400"
+                        }`}>
+                          {strategy.pnl >= 0 ? "$" : "-$"}{Math.abs(strategy.pnl).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                        </span>
+                        <span className="text-muted-foreground text-xs ml-2">
+                          ({strategy.trades} trades)
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-muted-foreground text-sm">No strategy data available</div>
+              )}
+            </div>
+          </div>
+          
+          {/* Trade Analysis Section */}
+          <TradeAnalysis range={range} />
         </div>
       )}
     </div>
