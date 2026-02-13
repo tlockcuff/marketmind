@@ -1,22 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Line } from "react-chartjs-2";
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  PointElement,
-  LineElement,
-  Title,
-  Tooltip,
-  Legend,
-  ChartOptions,
-} from "chart.js";
+import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { getApiUrl } from "@/lib/utils";
 import type { EquityCurveData } from "@/lib/types";
-
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Title, Tooltip, Legend);
 
 interface Props {
   range: string;
@@ -77,113 +64,24 @@ export function EquityCurveEnhanced({ range }: Props) {
     );
   }
 
-  const dates = data.equity_curve.map(p => new Date(p.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }));
-  
-  const chartData = {
-    labels: dates,
-    datasets: [
-      {
-        label: "Account",
-        data: data.equity_curve.map(p => p.normalized),
-        borderColor: "#ff9e2c",
-        backgroundColor: "rgba(255, 158, 44, 0.1)",
-        borderWidth: 2,
-        pointRadius: 1,
-        pointHoverRadius: 4,
-        tension: 0.1,
-      },
-      ...(data.spy_curve?.length ? [{
-        label: "SPY",
-        data: data.spy_curve.map(p => p.normalized),
-        borderColor: "#3b82f6",
-        backgroundColor: "rgba(59, 130, 246, 0.1)",
-        borderWidth: 1.5,
-        pointRadius: 0,
-        pointHoverRadius: 3,
-        tension: 0.1,
-      }] : []),
-      ...(data.btc_curve?.length ? [{
-        label: "BTC",
-        data: data.btc_curve.map(p => p.normalized),
-        borderColor: "#f59e0b",
-        backgroundColor: "rgba(245, 158, 11, 0.1)",
-        borderWidth: 1.5,
-        pointRadius: 0,
-        pointHoverRadius: 3,
-        tension: 0.1,
-      }] : []),
-    ],
-  };
-
-  const options: ChartOptions<"line"> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    scales: {
-      x: {
-        border: { color: "#3a3a48" },
-        grid: { color: "rgba(58, 58, 72, 0.3)" },
-        ticks: { 
-          color: "#94a3b8", 
-          font: { size: 10 },
-          maxTicksLimit: 8 
-        },
-      },
-      y: {
-        border: { color: "#3a3a48" },
-        grid: { color: "rgba(58, 58, 72, 0.3)" },
-        ticks: { 
-          color: "#94a3b8", 
-          font: { size: 10 },
-          callback: (value) => `${Number(value).toFixed(0)}%`
-        },
-      },
-    },
-    plugins: {
-      legend: {
-        position: "top",
-        labels: { 
-          color: "#e2e8f0", 
-          font: { size: 11 },
-          usePointStyle: true,
-          pointStyle: "line",
-        },
-      },
-      tooltip: {
-        backgroundColor: "rgba(15, 23, 42, 0.95)",
-        titleColor: "#e2e8f0",
-        bodyColor: "#e2e8f0",
-        borderColor: "#3a3a48",
-        borderWidth: 1,
-        titleFont: { size: 11 },
-        bodyFont: { size: 10 },
-        callbacks: {
-          title: (items) => {
-            const idx = items[0]?.dataIndex;
-            if (idx !== undefined && data.equity_curve[idx]) {
-              const point = data.equity_curve[idx];
-              return new Date(point.date).toLocaleDateString();
-            }
-            return "";
-          },
-          label: (item) => {
-            const label = item.dataset.label || "";
-            const value = Number(item.raw).toFixed(1);
-            if (label === "Account") {
-              const idx = item.dataIndex;
-              const point = data.equity_curve[idx];
-              const equity = point?.equity?.toLocaleString(undefined, { style: "currency", currency: "USD" }) || "N/A";
-              return [`${label}: ${value}%`, `Equity: ${equity}`];
-            }
-            return `${label}: ${value}%`;
-          },
-        },
-      },
-    },
-    interaction: {
-      intersect: false,
-      mode: "index",
-    },
-  };
+  // Merge data for recharts
+  const chartData = data.equity_curve.map((point, index) => {
+    const result: any = {
+      date: new Date(point.date).toLocaleDateString(undefined, { month: "short", day: "numeric" }),
+      account: point.normalized,
+      equity: point.equity,
+    };
+    
+    if (data.spy_curve && data.spy_curve[index]) {
+      result.SPY = data.spy_curve[index].normalized;
+    }
+    
+    if (data.btc_curve && data.btc_curve[index]) {
+      result.BTC = data.btc_curve[index].normalized;
+    }
+    
+    return result;
+  });
 
   // Calculate performance metrics
   const firstEquity = data.equity_curve[0]?.normalized || 100;
@@ -218,9 +116,74 @@ export function EquityCurveEnhanced({ range }: Props) {
           )}
         </div>
       </div>
-      <div style={{ height: "280px" }}>
-        <Line data={chartData} options={options} />
-      </div>
+      <ResponsiveContainer width="100%" height={280}>
+        <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 0 }}>
+          <CartesianGrid stroke="#252530" strokeDasharray="3 3" />
+          <XAxis 
+            dataKey="date"
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#94a3b8", fontSize: 10 }}
+            interval="preserveStartEnd"
+          />
+          <YAxis
+            axisLine={false}
+            tickLine={false}
+            tick={{ fill: "#94a3b8", fontSize: 10 }}
+            tickFormatter={(value) => `${value.toFixed(0)}%`}
+          />
+          <Tooltip
+            contentStyle={{
+              backgroundColor: "rgba(15, 23, 42, 0.95)",
+              border: "1px solid #3a3a48",
+              borderRadius: "4px",
+              color: "#e2e8f0",
+              fontSize: "11px"
+            }}
+            formatter={(value: any, name?: string, props?: any) => {
+              const displayName = name || "";
+              if (displayName === "account") {
+                const equity = props?.payload?.equity;
+                const equityStr = equity?.toLocaleString(undefined, { style: "currency", currency: "USD" }) || "N/A";
+                return [`${Number(value).toFixed(1)}% (${equityStr})`, "Account"];
+              }
+              return [`${Number(value).toFixed(1)}%`, displayName];
+            }}
+            labelFormatter={(date) => date}
+          />
+          <Legend 
+            wrapperStyle={{ color: "#e2e8f0", fontSize: "11px" }}
+          />
+          <Line
+            type="monotone"
+            dataKey="account"
+            stroke="#ff9e2c"
+            strokeWidth={2}
+            dot={false}
+            name="Account"
+          />
+          {data.spy_curve?.length && (
+            <Line
+              type="monotone"
+              dataKey="SPY"
+              stroke="#3b82f6"
+              strokeWidth={1.5}
+              dot={false}
+              name="SPY"
+            />
+          )}
+          {data.btc_curve?.length && (
+            <Line
+              type="monotone"
+              dataKey="BTC"
+              stroke="#f59e0b"
+              strokeWidth={1.5}
+              dot={false}
+              name="BTC"
+            />
+          )}
+        </LineChart>
+      </ResponsiveContainer>
     </div>
   );
 }

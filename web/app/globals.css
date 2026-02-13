@@ -86,25 +86,7 @@ body {
   background: #3f3f46;
 }
 
-/* Grid layout */
-.grid-item {
-  overflow: hidden;
-}
-.grid-item > * {
-  height: 100%;
-}
-.react-grid-placeholder {
-  background: #a1a1aa !important;
-  opacity: 0.15 !important;
-  border-radius: 0.25rem;
-}
-.react-grid-item > .react-resizable-handle {
-  background: none;
-}
-.react-grid-item > .react-resizable-handle::after {
-  border-right-color: #111111;
-  border-bottom-color: #111111;
-}
+/* Mobile-first responsive design */
 
 /* Bloomberg green/red for P/L */
 .pl-positive { color: #33d17a; }

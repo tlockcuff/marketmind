@@ -1,4 +1,6 @@
 import type { Metadata } from "next";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { WebSocketProvider } from "@/components/websocket-provider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -20,7 +22,11 @@ export default function RootLayout({
         />
       </head>
       <body className="antialiased min-h-screen bg-background text-foreground">
-        {children}
+        <TooltipProvider>
+          <WebSocketProvider>
+            {children}
+          </WebSocketProvider>
+        </TooltipProvider>
       </body>
     </html>
   );
