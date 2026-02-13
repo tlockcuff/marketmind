@@ -358,6 +358,73 @@ Is this trade still valid? Provide updated confidence (0-100) and any adjustment
             logger.error(f"Grok portfolio review error: {e}")
             return {"portfolio_actions": [], "new_signals": []}
 
+    def get_crypto_ideas(self) -> List[TradeSignal]:
+        """Query Grok for crypto swing/momentum trade ideas."""
+        try:
+            crypto_system = (
+                "You are a crypto swing/momentum trading AI. You identify high-conviction "
+                "crypto trades on Alpaca (BTC/USD, ETH/USD, SOL/USD, AVAX/USD, DOGE/USD, LINK/USD, ADA/USD). "
+                "Crypto trades 24/7, no PDT rules. Holds range from hours to days. "
+                "Always respond with JSON: {\"signals\": [...]}."
+            )
+            crypto_prompt = (
+                "Provide 5-8 crypto swing/momentum trade ideas. For each:\n"
+                "- ticker (e.g. BTC/USD)\n"
+                "- direction: buy or sell\n"
+                "- confidence: 0-100\n"
+                "- entry_price, stop_loss (5%), take_profit (15%)\n"
+                "- rationale (1-2 sentences)\n\n"
+                "Focus on:\n"
+                "- BTC dominance trends and alt rotation patterns\n"
+                "- On-chain catalysts (ETF inflows/outflows, halvings, protocol upgrades)\n"
+                "- Macro correlation (DXY strength/weakness, rate expectations)\n"
+                "- Technical setups: RSI extremes, MACD crossovers, Bollinger breakouts, VWAP crosses\n"
+                "- Volume confirmation and momentum divergences\n\n"
+                "Include at least 1-2 short/sell signals for overextended names.\n"
+                "Be analytical — only rate 70+ when setup + catalyst clearly align.\n\n"
+                "Format:\n"
+                "{\"signals\": [{\"ticker\": \"BTC/USD\", \"direction\": \"buy\", \"confidence\": 75, "
+                "\"entry_price\": 65000, \"stop_loss\": 61750, \"take_profit\": 74750, "
+                "\"rationale\": \"...\"}]}"
+            )
+
+            logger.info("Requesting crypto trade ideas from Grok...")
+            response = self.client.chat.completions.create(
+                model=self.model,
+                messages=[
+                    {"role": "system", "content": crypto_system},
+                    {"role": "user", "content": crypto_prompt},
+                ],
+                temperature=0.4,
+                max_tokens=4000,
+            )
+
+            content = response.choices[0].message.content
+            logger.info(f"Grok crypto response received ({len(content)} chars)")
+
+            usage = response.usage
+            signals = self._try_parse_json(content) or parse_grok_response(content)
+
+            # Tag all signals as crypto source
+            for s in signals:
+                s.signal_source = "crypto_grok"
+                s.timeframe = "crypto_swing"
+
+            logger.info(f"Parsed {len(signals)} crypto signals from Grok")
+
+            get_tracker().record_request(
+                model=self.model,
+                input_tokens=usage.prompt_tokens if usage else 0,
+                output_tokens=usage.completion_tokens if usage else 0,
+                signals_count=len(signals),
+            )
+
+            return signals
+
+        except Exception as e:
+            logger.error(f"Grok crypto API error: {e}")
+            return []
+
     def _try_parse_json(self, content: str) -> List[TradeSignal]:
         """Try to extract and parse JSON from response."""
         try:

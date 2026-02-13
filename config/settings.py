@@ -144,6 +144,9 @@ CONGRESS_ENABLED = os.getenv("CONGRESS_ENABLED", "false").lower() == "true"
 CONGRESS_CACHE_TTL_HOURS = 6 # 6 hours cache ttl
 CONGRESS_LOOKBACK_DAYS = 30 # 30 days lookback
 
+# Crypto trading (24/7, no PDT)
+CRYPTO_ENABLED = True
+
 # News Sentinel — real-time headline monitor
 NEWS_SENTINEL_ENABLED = os.getenv("NEWS_SENTINEL_ENABLED", "true").lower() == "true"
 NEWS_SENTINEL_INTERVAL = int(os.getenv("NEWS_SENTINEL_INTERVAL", "60"))  # seconds
@@ -215,6 +218,8 @@ EDITABLE_SETTINGS = {
     "options_dte_min":           {"type": "int",   "min": 0,    "max": 30,   "label": "Options DTE Min",         "section": "Options"},
     "options_dte_max":           {"type": "int",   "min": 1,    "max": 90,   "label": "Options DTE Max",         "section": "Options"},
     "options_max_concurrent":    {"type": "int",   "min": 1,    "max": 100,  "label": "Options Max Concurrent",  "section": "Options"},
+    # Crypto
+    "crypto_enabled":            {"type": "bool",                             "label": "Crypto Trading",          "section": "Crypto"},
     # Recovery
     "recovery_buying_power_pct": {"type": "float", "min": 0.01, "max": 0.5,  "label": "Recovery BP %",           "section": "Recovery"},
     "recovery_buying_power_min": {"type": "float", "min": 100,  "max": 100000,"label": "Recovery BP Min $",      "section": "Recovery"},

@@ -32,6 +32,7 @@ from src.trading.options.position_mgr import OptionsPositionManager
 from src.signals.congress_client import CongressClient
 from src.signals.momentum_screener import MomentumScreener
 from src.analysis.correlation import check_correlation
+from src.crypto.trader import CryptoTrader
 from src.scheduler.trading_hours import (
     is_market_open,
     is_trading_day,
@@ -120,6 +121,14 @@ class TradingBot:
             self.options_executor = OptionsExecutor(trading_client)
             self.options_position_mgr = OptionsPositionManager(self.options_executor)
             logger.info("Options trading enabled")
+
+        # Crypto trading module (24/7, independent of market hours)
+        self.crypto_enabled = settings.get("crypto_enabled")
+        self.crypto_trader: CryptoTrader | None = None
+        self._last_crypto_cycle = None
+        if self.crypto_enabled:
+            self.crypto_trader = CryptoTrader(self.alpaca, self.grok, self.discord)
+            logger.info("Crypto trading enabled (24/7)")
 
         logger.info(f"Trading bot initialized (paper={paper})")
 
@@ -239,6 +248,9 @@ class TradingBot:
         logger.info("Starting trading bot...")
         self.discord.alert("Bot Started", format_market_status(), "info")
 
+        # Run crypto cycle on startup (24/7)
+        self._crypto_cycle()
+
         # Run a trading cycle immediately on startup
         if is_market_open():
             try:
@@ -258,6 +270,9 @@ class TradingBot:
 
         while True:
             try:
+                # Crypto runs 24/7, independent of market hours
+                self._crypto_cycle()
+
                 # Wait for market open
                 if not is_market_open():
                     if is_trading_day():
@@ -1136,6 +1151,22 @@ class TradingBot:
             # Get actual exit price instead of recording 0 (which makes all options show as losses)
             exit_price = get_option_price(key) or 0
             get_trade_history().record_option_close(key, exit_price, "exit_trigger")
+
+    def _crypto_cycle(self):
+        """Run a crypto trading cycle if enough time has passed."""
+        if not self.crypto_trader:
+            return
+        from src.crypto.config import CRYPTO_SCAN_INTERVAL_MINUTES
+        now = utcnow()
+        if self._last_crypto_cycle:
+            elapsed = (now - self._last_crypto_cycle).total_seconds() / 60
+            if elapsed < CRYPTO_SCAN_INTERVAL_MINUTES:
+                return
+        try:
+            self.crypto_trader.run_cycle()
+        except Exception as e:
+            logger.exception(f"Crypto cycle error: {e}")
+        self._last_crypto_cycle = now
 
     def _send_daily_summary(self):
         """Send end of day summary."""
