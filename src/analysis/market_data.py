@@ -100,6 +100,21 @@ class MarketDataFetcher:
         df.columns = [c.lower() for c in df.columns]
         return df
 
+    @staticmethod
+    def _yf_symbol(ticker: str) -> str:
+        """Convert Alpaca crypto symbols to yfinance format.
+        Alpaca: BTCUSD, ETHUSD, AVAXUSD  →  yfinance: BTC-USD, ETH-USD, AVAX-USD"""
+        # Handle slash format (BTC/USD → BTC-USD)
+        if "/" in ticker:
+            return ticker.replace("/", "-")
+        # Handle Alpaca no-slash format (BTCUSD → BTC-USD)
+        crypto_bases = ["BTC", "ETH", "SOL", "AVAX", "DOGE", "LINK", "ADA",
+                        "DOT", "MATIC", "UNI", "AAVE", "SHIB", "XRP", "LTC"]
+        for base in crypto_bases:
+            if ticker == f"{base}USD":
+                return f"{base}-USD"
+        return ticker
+
     @retry_api_call(max_retries=2, base_delay=1.0)
     def _fetch_yfinance(
         self,
@@ -118,7 +133,8 @@ class MarketDataFetcher:
         period = f"{days}d" if days <= 60 else f"{days // 30}mo"
         if interval in ["1m", "5m", "15m"] and days > 7:
             period = "7d"
-        stock = yf.Ticker(ticker)
+        yf_ticker = self._yf_symbol(ticker)
+        stock = yf.Ticker(yf_ticker)
         df = stock.history(period=period, interval=interval)
         df = df.reset_index()
         df.columns = [c.lower() for c in df.columns]
@@ -143,7 +159,8 @@ class MarketDataFetcher:
 
         # Fallback to yfinance
         try:
-            stock = yf.Ticker(ticker)
+            yf_ticker = self._yf_symbol(ticker)
+            stock = yf.Ticker(yf_ticker)
             return stock.info.get("regularMarketPrice") or stock.info.get("currentPrice")
         except Exception as e:
             logger.warning(f"Failed to get price for {ticker}: {e}")
@@ -358,7 +375,8 @@ class MarketDataFetcher:
 
         # Fallback to yfinance
         try:
-            stock = yf.Ticker(ticker)
+            yf_ticker = self._yf_symbol(ticker)
+            stock = yf.Ticker(yf_ticker)
             info = stock.info
             return {
                 "price": info.get("regularMarketPrice"),
