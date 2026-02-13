@@ -144,3 +144,7 @@ CREATE TABLE IF NOT EXISTS logs (
 );
 CREATE INDEX IF NOT EXISTS idx_logs_created ON logs(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_logs_mode ON logs(mode);
+
+-- Migrations (safe to re-run, handles existing DBs)
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS hold_duration_hours NUMERIC(10,2);
+ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy_tag VARCHAR(30);
