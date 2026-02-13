@@ -218,11 +218,14 @@ class AlpacaClient:
         """Submit market order."""
         try:
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+            # Crypto requires GTC; stocks use DAY
+            is_crypto = "/" in symbol or symbol.endswith("USD")
+            tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
             request = MarketOrderRequest(
                 symbol=symbol,
                 qty=qty,
                 side=order_side,
-                time_in_force=TimeInForce.DAY,
+                time_in_force=tif,
             )
             order = self.client.submit_order(request)
             logger.info(f"Market order submitted: {symbol} {side} {qty}")
