@@ -219,6 +219,7 @@ class AlpacaClient:
         try:
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
             # Crypto requires GTC; stocks use DAY
+            # Fractional stock orders MUST use DAY (Alpaca requirement)
             is_crypto = "/" in symbol or symbol.endswith("USD")
             tif = TimeInForce.GTC if is_crypto else TimeInForce.DAY
             request = MarketOrderRequest(
@@ -331,12 +332,18 @@ class AlpacaClient:
         take_profit: float,
         limit_price: float = None,
     ) -> OrderResult:
-        """Submit bracket order with stop loss and take profit."""
+        """Submit bracket order with stop loss and take profit.
+        Falls back to simple market order for fractional qty (Alpaca limitation)."""
         try:
             from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
             from alpaca.trading.enums import OrderClass
 
             order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
+
+            # Fractional shares can't use bracket orders — use simple DAY market order
+            if qty < 1:
+                logger.info(f"Fractional qty {qty} for {symbol}, using simple market order (no bracket)")
+                return self.submit_market_order(symbol, qty, side)
 
             if limit_price:
                 request = LimitOrderRequest(
@@ -406,10 +413,25 @@ class AlpacaClient:
         new_stop: float,
         new_tp: float,
     ) -> bool:
-        """Cancel existing SL/TP orders and submit new OCO pair."""
+        """Cancel existing SL/TP orders and submit new OCO pair.
+        For fractional positions (qty < 1) or crypto, skip broker-side orders
+        and rely on local stop management (position_mgr.check_exits)."""
         try:
             new_stop = self._round_price(new_stop)
             new_tp = self._round_price(new_tp)
+
+            is_crypto = "/" in symbol or symbol.endswith("USD")
+            is_fractional = qty < 1
+
+            # Fractional and crypto positions can't use GTC bracket/OCO orders
+            if is_fractional or is_crypto:
+                # Cancel any existing orders, rely on local stop management
+                cancelled = self.cancel_orders_for_symbol(symbol)
+                if cancelled > 0:
+                    self._wait_for_cancels(symbol)
+                logger.info(f"{'Fractional' if is_fractional else 'Crypto'} position {symbol}: "
+                           f"local stop management only (SL={new_stop} TP={new_tp})")
+                return True
 
             cancelled = self.cancel_orders_for_symbol(symbol)
             if cancelled > 0:
