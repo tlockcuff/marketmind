@@ -118,30 +118,44 @@ class CryptoScanner:
 
         # RSI oversold bounce
         if ind.rsi < 30:
-            confidence += 25
+            confidence += 30
             reasons.append(f"RSI oversold ({ind.rsi:.0f})")
+        elif ind.rsi < 40:
+            confidence += 15
+            reasons.append(f"RSI approaching oversold ({ind.rsi:.0f})")
 
         # RSI > 70 with bullish momentum (trend continuation)
-        if ind.rsi > 70 and ind.macd_histogram > 0 and ind.obv_trend == "rising":
-            confidence += 20
+        if ind.rsi > 70 and ind.macd_histogram > 0:
+            confidence += 25
             reasons.append(f"RSI momentum continuation ({ind.rsi:.0f})")
 
         # MACD bullish crossover
-        if ind.macd_trend == "bullish" and abs(ind.macd_histogram) > 0:
-            prev_bearish = ind.macd_histogram > 0  # histogram just turned positive
-            confidence += 15
-            reasons.append("MACD bullish crossover")
+        if ind.macd_trend == "bullish":
+            confidence += 20
+            reasons.append("MACD bullish")
 
         # MACD bearish crossover → short signal
-        if ind.macd_trend == "bearish" and ind.rsi > 60:
-            confidence += 15
+        if ind.macd_trend == "bearish" and ind.rsi > 55:
+            confidence += 20
             direction = "sell"
-            reasons.append("MACD bearish crossover")
+            reasons.append("MACD bearish")
+
+        # Price above key MAs (trend confirmation)
+        if ind.price_vs_sma20 == "above" and ind.price_vs_sma50 == "above":
+            confidence += 15
+            reasons.append("Above SMA20 & SMA50")
+        elif ind.price_vs_sma20 == "below" and ind.price_vs_sma50 == "below":
+            confidence += 10
+            direction = "sell"
+            reasons.append("Below SMA20 & SMA50")
 
         # Bollinger Band breakout with volume
         if ind.bollinger_position == "near_lower" and vol_spike:
             confidence += 20
             reasons.append("BB lower band bounce + volume")
+        elif ind.bollinger_position == "near_lower":
+            confidence += 10
+            reasons.append("BB lower band bounce")
         elif ind.bollinger_position == "near_upper" and vol_spike and ind.macd_trend == "bullish":
             confidence += 15
             reasons.append("BB upper breakout + volume")
@@ -150,9 +164,20 @@ class CryptoScanner:
         if ind.vwap and price > ind.vwap and vol_spike:
             confidence += 15
             reasons.append("Price above VWAP + volume")
-        elif ind.vwap and price < ind.vwap and vol_spike and direction == "sell":
+        elif ind.vwap and price > ind.vwap:
+            confidence += 8
+            reasons.append("Price above VWAP")
+        elif ind.vwap and price < ind.vwap and direction == "sell":
             confidence += 15
-            reasons.append("Price below VWAP + volume")
+            reasons.append("Price below VWAP")
+
+        # OBV trend confirmation
+        if ind.obv_trend == "rising" and direction == "buy":
+            confidence += 10
+            reasons.append("OBV rising")
+        elif ind.obv_trend == "falling" and direction == "sell":
+            confidence += 10
+            reasons.append("OBV falling")
 
         if confidence < CRYPTO_MIN_SCORE_THRESHOLD:
             return None
