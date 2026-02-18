@@ -1,6 +1,6 @@
 """Crypto-specific configuration constants."""
 
-CRYPTO_ENABLED = True
+CRYPTO_ENABLED = False  # Disabled by default — enable via dashboard config
 CRYPTO_SYMBOLS = ["BTC/USD", "ETH/USD", "SOL/USD", "AVAX/USD", "DOGE/USD", "LINK/USD", "ADA/USD"]
 CRYPTO_SCAN_INTERVAL_MINUTES = 15
 CRYPTO_MAX_POSITION_PCT = 0.15

@@ -60,9 +60,24 @@ class CryptoTrader:
     # ------------------------------------------------------------------
 
     def _sync_positions(self):
-        """Load open crypto positions from DB into memory."""
+        """Load open crypto positions from DB, then reconcile with Alpaca.
+
+        If a position is marked open in the DB but no longer exists on Alpaca
+        (e.g. manually closed, or qty drifted to 0), close it in the DB so we
+        don't carry ghost positions forever.
+        """
         mode = _mode()
         try:
+            # --- 1. Build set of crypto symbols actually held on Alpaca ---
+            alpaca_positions = self.alpaca.get_positions() or []
+            alpaca_crypto = {}  # symbol -> qty
+            for p in alpaca_positions:
+                sym = p.get("symbol", "")
+                # Alpaca crypto symbols contain "/" (BTC/USD) or asset_class == "crypto"
+                if "/" in sym or p.get("asset_class") == "crypto":
+                    alpaca_crypto[sym] = abs(float(p.get("qty", 0)))
+
+            # --- 2. Load DB open crypto trades ---
             with get_db() as conn:
                 rows = conn.execute(
                     """SELECT symbol, direction, qty, entry_price, entry_time,
@@ -72,15 +87,38 @@ class CryptoTrader:
                        WHERE mode = %s AND status = 'open' AND asset_type = 'crypto'""",
                     (mode,),
                 ).fetchall()
+
                 for r in rows:
                     symbol = r[0]
+                    db_qty = float(r[2]) if r[2] else 0
                     entry_price = float(r[3]) if r[3] else 0
                     atr = float(r[8]) if r[8] else entry_price * CRYPTO_TRAILING_STOP_PCT
+
+                    # Check if Alpaca still holds this position
+                    alpaca_qty = alpaca_crypto.get(symbol, 0)
+
+                    if alpaca_qty <= 0 and db_qty <= 0:
+                        # Ghost position — mark closed in DB
+                        logger.warning(f"Crypto: closing ghost position {symbol} (qty=0 in DB and Alpaca)")
+                        try:
+                            conn.execute(
+                                """UPDATE trades SET status = 'ghost_closed', exit_time = %s
+                                   WHERE mode = %s AND symbol = %s AND status = 'open' AND asset_type = 'crypto'""",
+                                (utcnow(), mode, symbol),
+                            )
+                            conn.commit()
+                        except Exception as e2:
+                            logger.warning(f"Failed to close ghost position {symbol}: {e2}")
+                        continue
+
+                    # Use Alpaca qty as source of truth if it differs
+                    actual_qty = alpaca_qty if alpaca_qty > 0 else db_qty
+
                     self.positions[symbol] = CryptoPosition(
                         symbol=symbol,
                         direction=r[1],
-                        qty=float(r[2]),
-                        original_qty=float(r[2]),
+                        qty=actual_qty,
+                        original_qty=actual_qty,
                         entry_price=entry_price,
                         entry_time=r[4],
                         stop_loss=float(r[5]) if r[5] else entry_price * (1 - CRYPTO_STOP_LOSS_PCT),
@@ -90,7 +128,8 @@ class CryptoTrader:
                         scale_out_level=r[9] or 0,
                         atr=atr,
                     )
-            logger.info(f"Crypto: synced {len(self.positions)} open positions")
+
+            logger.info(f"Crypto: synced {len(self.positions)} open positions (Alpaca has {len(alpaca_crypto)} crypto)")
         except Exception as e:
             logger.warning(f"Crypto position sync failed: {e}")
 
@@ -186,6 +225,13 @@ class CryptoTrader:
         pos = self.positions.get(symbol)
         if not pos:
             return
+
+        if pos.qty <= 0:
+            # Position already fully exited (scale-outs or external close) — just update DB
+            logger.info(f"Crypto {symbol}: qty=0, marking closed in DB ({reason})")
+            get_trade_history().record_close(symbol, price, reason)
+            return
+
         side = "sell" if pos.direction in ("buy", "long") else "buy"
         result = self.alpaca.submit_market_order(symbol=symbol, qty=pos.qty, side=side)
         if result.success:
@@ -194,11 +240,19 @@ class CryptoTrader:
             logger.info(f"Crypto closed {symbol}: {reason} @ ${price:,.2f}")
         else:
             logger.error(f"Crypto close failed for {symbol}: {result.message}")
+            # If close failed because position doesn't exist on Alpaca, still record it
+            if "not found" in (result.message or "").lower() or "no position" in (result.message or "").lower():
+                logger.warning(f"Crypto {symbol}: position gone on Alpaca, closing in DB")
+                get_trade_history().record_close(symbol, price, reason)
 
     def _partial_close(self, symbol: str, qty: float, price: float, reason: str):
         """Sell part of a crypto position."""
         pos = self.positions.get(symbol)
-        if not pos:
+        if not pos or pos.qty <= 0:
+            return
+        # Don't try to sell more than we have
+        qty = min(qty, pos.qty)
+        if qty <= 0:
             return
         side = "sell" if pos.direction in ("buy", "long") else "buy"
         result = self.alpaca.submit_market_order(symbol=symbol, qty=qty, side=side)
