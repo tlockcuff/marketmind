@@ -351,11 +351,11 @@ def validate_config_cross(overrides: dict) -> list[str]:
     if dte_min is not None and dte_max is not None and dte_min > dte_max:
         errors.append(f"options_dte_min ({dte_min}) must be <= options_dte_max ({dte_max})")
 
-    # reserve_day_trades must be < day_trade_limit
+    # reserve_day_trades must be <= day_trade_limit
     reserve = _val("reserve_day_trades")
     limit = _val("day_trade_limit")
-    if reserve is not None and limit is not None and reserve >= limit:
-        errors.append(f"reserve_day_trades ({reserve}) must be less than day_trade_limit ({limit})")
+    if reserve is not None and limit is not None and reserve > limit:
+        errors.append(f"reserve_day_trades ({reserve}) must be <= day_trade_limit ({limit})")
 
     # min_score_for_day_trade must be >= min_score_threshold
     dt_score = _val("min_score_for_day_trade")
