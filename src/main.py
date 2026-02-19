@@ -105,6 +105,7 @@ class TradingBot:
         self.position_mgr = PositionManager()
         self.risk_mgr = RiskManager()
         self.discord = DiscordNotifier()
+        self._loss_limit_alerted = False
         self.congress = CongressClient() if settings.get("congress_enabled") else None
         self.momentum = MomentumScreener()
         self.ticker_blacklist: set = set()  # Tickers that failed data fetch
@@ -317,10 +318,13 @@ class TradingBot:
                 if not can_trade:
                     logger.warning(f"Trading blocked: {msg}")
                     if "loss limit" in msg.lower():
-                        self.discord.daily_loss_limit_hit(
-                            settings.get("daily_loss_limit_pct"),
-                            self.alpaca.get_account().get("equity", 0),
-                        )
+                        # Only send Discord alert once per halt (not every loop)
+                        if not self._loss_limit_alerted:
+                            self.discord.daily_loss_limit_hit(
+                                settings.get("daily_loss_limit_pct"),
+                                self.alpaca.get_account().get("equity", 0),
+                            )
+                            self._loss_limit_alerted = True
                     elif "buying power" in msg.lower():
                         if self._recover_buying_power():
                             logger.info("Recovery succeeded, resuming after cooldown")
@@ -328,6 +332,9 @@ class TradingBot:
                         logger.warning("Recovery failed, sleeping 5min")
                     time.sleep(300)
                     continue
+
+                # Reset loss limit alert flag when trading resumes
+                self._loss_limit_alerted = False
 
                 # Proactive recovery: free BP before cycle if too low for any trade
                 if self._needs_proactive_recovery():
